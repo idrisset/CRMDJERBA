@@ -1,0 +1,88 @@
+{
+  "theme": "light",
+  "archetype": "4 - Swiss & High-Contrast",
+  "colors": {
+    "background": "#F8FAFC",
+    "surface": "#FFFFFF",
+    "primary": "#2563EB",
+    "primary_hover": "#1D4ED8",
+    "text_main": "#0F172A",
+    "text_muted": "#64748B",
+    "border": "#E2E8F0",
+    "status": {
+      "available": "#10B981",
+      "reserved": "#F59E0B",
+      "sold": "#475569",
+      "new_client": "#3B82F6",
+      "interested": "#8B5CF6",
+      "visit": "#06B6D4",
+      "ai_whatsapp": "#25D366"
+    }
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Outfit, sans-serif",
+      "weights": ["500", "600", "700"],
+      "tracking": "tracking-tight"
+    },
+    "body": {
+      "font_family": "IBM Plex Sans, sans-serif",
+      "weights": ["400", "500"]
+    }
+  },
+  "layout_and_spacing": {
+    "spacing_scale": "p-2, p-4, p-6, p-8. Use generous padding inside cards.",
+    "dashboard_grid": "Control Room Grid. Base grid-cols-1 md:grid-cols-4. Gap gap-6.",
+    "sidebar": "Fixed left w-64, solid white background, 1px right border (border-slate-200).",
+    "container": "ml-64 p-8 bg-slate-50 min-h-screen",
+    "alignment": "Left-align dense data and tabular content. Optical alignment for icons within buttons."
+  },
+  "components_strategy": {
+    "buttons": "Shadcn primitives. Primary: bg-blue-600 text-white rounded-md. Include hover state and focus rings.",
+    "cards": "Flat white background (bg-white), 1px border (border-slate-200), subtle shadow (shadow-sm). No heavy shadows.",
+    "tables": "Shadcn Table. Use F-pattern for column layout. Statuses must be Shadcn Badges with corresponding colors.",
+    "forms": "Shadcn Forms. Input, Select, and Dialogs. Labels should be text-sm text-slate-600.",
+    "tabs": "Shadcn Tabs used for separating Residences in the Apartments page.",
+    "badges": "Rounded-full px-2.5 py-0.5 text-xs font-medium. Use color tinting (e.g., bg-emerald-100 text-emerald-800 for Available)."
+  },
+  "design_rules": {
+    "anti_patterns": "No generic 'Inter' for headings. No full-screen gradients. Do not center data tables or forms.",
+    "motion": "Use framer-motion for staggering list items. Include simple transition-all duration-200 on interactive elements.",
+    "accessibility": "Always ensure >4.5:1 text contrast. Include aria-labels. Keep focus states visible.",
+    "data_testid": "MANDATORY: Add data-testid to all interactive elements, buttons, inputs, tabs, and rows."
+  },
+  "media": {
+    "images": [
+      {
+        "url": "https://images.unsplash.com/photo-1667238324671-c2fe726f6084?crop=entropy&cs=srgb&fm=jpg",
+        "category": "residence_preview",
+        "description": "Modern apartment building exterior used as a thumbnail for residences in the dashboard."
+      },
+      {
+        "url": "https://images.pexels.com/photos/30004366/pexels-photo-30004366.jpeg",
+        "category": "user_avatar_team",
+        "description": "Photo of the sales team or default user avatars."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1636751364472-12bfad09b451?crop=entropy&cs=srgb&fm=jpg",
+        "category": "whatsapp_ai_icon",
+        "description": "3D WhatsApp icon used in the AI integration widget or dashboard card."
+      }
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "instructions": "Use Lucide React for all sidebar icons, action icons, and status indicators."
+    }
+  },
+  "instructions_to_main_agent": [
+    "1. Setup fonts: Import 'Outfit' and 'IBM Plex Sans' from Google Fonts and configure them in tailwind.config.js.",
+    "2. Interface is strictly in French (Tableau de bord, Clients, Appartements, Paramètres, IA WhatsApp).",
+    "3. Layout: Create a DashboardLayout with a Sidebar (w-64) and a Main Content area. Include a top header showing 'Utilisateur en ligne: Commercial 1' to mock multi-user sync.",
+    "4. Dashboard View: Grid layout with KPIs (Total Clients, Available Apts, Reserved Apts). Add a section for 'Dernières Activités' and 'Statut IA WhatsApp'.",
+    "5. Clients View: Use Shadcn Table. Columns: Nom, Téléphone, Email, Salaire, Situation, Statut, Appartement, Actions. Build a Dialog with Shadcn Forms to Add/Edit clients. Include the tracking status.",
+    "6. Appartements View: Use Shadcn Tabs to separate 'Résidence A', 'Résidence B', 'Résidence C' (names editable in settings). Display cards or table for F2, F3, F4. Fields: Prix, Étage, Statut. Auto-sync logic: If a linked client is 'Réservé', the apartment must be marked 'Réservé'.",
+    "7. IA WhatsApp View: A mock configuration interface showing AI prompt settings and a feed of recent automated lead interactions.",
+    "8. Testing: Apply data-testid to all forms, buttons, inputs, and tabs. Ensure Shadcn select and dialog are fully styled.",
+    "9. Theme: Keep it light, professional, and dense (Control Room Grid). Do not use dark mode colors unless explicitly requested."
+  ]
+}
