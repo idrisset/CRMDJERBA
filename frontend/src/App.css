@@ -1,34 +1,43 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* Main App styles */
+.sidebar {
+    @apply fixed left-0 top-0 h-screen w-64 bg-white border-r border-slate-200 flex flex-col;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+.main-content {
+    @apply ml-64 min-h-screen bg-slate-50;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+.nav-link {
+    @apply flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all duration-200 rounded-lg mx-2;
 }
 
-.App-link {
-    color: #61dafb;
+.nav-link.active {
+    @apply bg-blue-50 text-blue-600 font-medium;
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+.card-stat {
+    @apply bg-white rounded-lg border border-slate-200 p-6 shadow-sm hover:shadow transition-shadow duration-200;
+}
+
+.btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md transition-colors duration-200;
+}
+
+.input-field {
+    @apply w-full px-3 py-2 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Table styles */
+.table-row-hover {
+    @apply hover:bg-slate-50 transition-colors duration-150;
 }

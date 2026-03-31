@@ -1,53 +1,88 @@
-import { useEffect } from "react";
+import "@/index.css";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
+import { WebSocketProvider } from "./contexts/WebSocketContext";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { Layout } from "./components/Layout";
+import { Login } from "./pages/Login";
+import { Register } from "./pages/Register";
+import { Dashboard } from "./pages/Dashboard";
+import { Clients } from "./pages/Clients";
+import { Appartements } from "./pages/Appartements";
+import { WhatsApp } from "./pages/WhatsApp";
+import { Parametres } from "./pages/Parametres";
+import { Toaster } from "./components/ui/sonner";
 
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <AuthProvider>
+      <WebSocketProvider>
+        <Toaster position="top-right" richColors />
+        <BrowserRouter>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+
+            {/* Protected routes */}
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Dashboard />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/clients"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Clients />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/appartements"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Appartements />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/whatsapp"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <WhatsApp />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/parametres"
+              element={
+                <ProtectedRoute>
+                  <Layout>
+                    <Parametres />
+                  </Layout>
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Redirect unknown routes */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </WebSocketProvider>
+    </AuthProvider>
   );
 }
 
