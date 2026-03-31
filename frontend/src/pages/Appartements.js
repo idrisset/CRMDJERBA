@@ -131,7 +131,7 @@ export function Appartements() {
       prix: parseFloat(formData.prix),
       etage: parseInt(formData.etage),
       surface: formData.surface ? parseFloat(formData.surface) : null,
-      client_id: formData.client_id || null,
+      client_id: formData.client_id && formData.client_id !== 'none' ? formData.client_id : null,
     };
 
     try {
@@ -468,7 +468,7 @@ export function Appartements() {
                     <SelectValue placeholder="Sélectionner un client" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Aucun</SelectItem>
+                    <SelectItem value="none">Aucun</SelectItem>
                     {clients.map((c) => (
                       <SelectItem key={c.id} value={c.id}>{c.nom} - {c.telephone}</SelectItem>
                     ))}

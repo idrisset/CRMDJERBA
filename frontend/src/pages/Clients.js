@@ -137,7 +137,8 @@ export function Clients() {
     const payload = {
       ...formData,
       salaire: formData.salaire ? parseFloat(formData.salaire) : null,
-      appartement_id: formData.appartement_id || null,
+      appartement_id: formData.appartement_id && formData.appartement_id !== 'none' ? formData.appartement_id : null,
+      situation_familiale: formData.situation_familiale && formData.situation_familiale !== 'none' ? formData.situation_familiale : null,
     };
 
     try {
@@ -374,6 +375,7 @@ export function Clients() {
                     <SelectValue placeholder="Sélectionner" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">Sélectionner</SelectItem>
                     {SITUATIONS.map((s) => (
                       <SelectItem key={s} value={s}>{s}</SelectItem>
                     ))}
@@ -409,7 +411,7 @@ export function Clients() {
                     <SelectValue placeholder="Aucun" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Aucun</SelectItem>
+                    <SelectItem value="none">Aucun</SelectItem>
                     {appartements.filter(a => a.statut === 'disponible' || a.id === formData.appartement_id).map((a) => (
                       <SelectItem key={a.id} value={a.id}>
                         {a.type_appart} - Étage {a.etage} ({a.prix?.toLocaleString('fr-FR')} €)
