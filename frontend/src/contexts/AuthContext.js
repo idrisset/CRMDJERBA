@@ -5,8 +5,14 @@ const AuthContext = createContext(null);
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-// Configure axios to send cookies
-axios.defaults.withCredentials = true;
+// Configure axios interceptor for auth header
+axios.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 export function formatApiErrorDetail(detail) {
   if (detail == null) return "Une erreur est survenue. Veuillez réessayer.";
@@ -26,10 +32,20 @@ export function AuthProvider({ children }) {
   }, []);
 
   const checkAuth = async () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      setUser(false);
+      setLoading(false);
+      return;
+    }
+    
     try {
-      const { data } = await axios.get(`${API}/auth/me`, { withCredentials: true });
+      const { data } = await axios.get(`${API}/auth/me`);
       setUser(data);
     } catch (e) {
+      // Token invalid, clear storage
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
       setUser(false);
     } finally {
       setLoading(false);
@@ -37,23 +53,42 @@ export function AuthProvider({ children }) {
   };
 
   const login = async (email, password) => {
-    const { data } = await axios.post(`${API}/auth/login`, { email, password }, { withCredentials: true });
-    setUser(data);
+    const { data } = await axios.post(`${API}/auth/login`, { email, password });
+    // Store tokens in localStorage
+    localStorage.setItem('access_token', data.access_token);
+    localStorage.setItem('refresh_token', data.refresh_token);
+    setUser({
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      role: data.role
+    });
     return data;
   };
 
   const register = async (email, password, name, role = 'commercial') => {
-    const { data } = await axios.post(`${API}/auth/register`, { email, password, name, role }, { withCredentials: true });
-    setUser(data);
+    const { data } = await axios.post(`${API}/auth/register`, { email, password, name, role });
+    // Store tokens in localStorage
+    localStorage.setItem('access_token', data.access_token);
+    localStorage.setItem('refresh_token', data.refresh_token);
+    setUser({
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      role: data.role
+    });
     return data;
   };
 
   const logout = async () => {
     try {
-      await axios.post(`${API}/auth/logout`, {}, { withCredentials: true });
+      await axios.post(`${API}/auth/logout`);
     } catch (e) {
       console.error('Logout error:', e);
     }
+    // Clear localStorage
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
     setUser(false);
   };
 

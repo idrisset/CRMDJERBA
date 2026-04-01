@@ -300,15 +300,14 @@ async def register(user: UserRegister):
     access_token = create_access_token(user_id, user.email)
     refresh_token = create_refresh_token(user_id)
     
-    response = JSONResponse(content={
+    return {
         "id": user_id,
         "email": user.email,
         "name": user.name,
-        "role": user.role
-    })
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=3600, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
-    return response
+        "role": user.role,
+        "access_token": access_token,
+        "refresh_token": refresh_token
+    }
 
 @api_router.post("/auth/login")
 async def login(credentials: UserLogin):
@@ -323,15 +322,14 @@ async def login(credentials: UserLogin):
     access_token = create_access_token(user_id, user["email"])
     refresh_token = create_refresh_token(user_id)
     
-    response = JSONResponse(content={
+    return {
         "id": user_id,
         "email": user["email"],
         "name": user.get("name", ""),
-        "role": user.get("role", "commercial")
-    })
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=3600, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
-    return response
+        "role": user.get("role", "commercial"),
+        "access_token": access_token,
+        "refresh_token": refresh_token
+    }
 
 @api_router.post("/auth/logout")
 async def logout():
