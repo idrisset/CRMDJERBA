@@ -67,15 +67,22 @@ export function Appartements() {
         axios.get(`${API}/residences`, { withCredentials: true }),
         axios.get(`${API}/clients`, { withCredentials: true }),
       ]);
-      setAppartements(appartsRes.data);
-      setResidences(residencesRes.data);
-      setClients(clientsRes.data);
+      setAppartements(appartsRes.data || []);
+      setResidences(residencesRes.data || []);
+      setClients(clientsRes.data || []);
       
-      if (!selectedResidence && residencesRes.data.length > 0) {
+      if (!selectedResidence && residencesRes.data && residencesRes.data.length > 0) {
         setSelectedResidence(residencesRes.data[0].id);
       }
     } catch (e) {
-      toast.error(t('error'));
+      console.error('Fetch error:', e);
+      // If 401, don't show error (user will be redirected)
+      if (e.response?.status !== 401) {
+        toast.error(t('error'));
+      }
+      setAppartements([]);
+      setResidences([]);
+      setClients([]);
     } finally {
       setLoading(false);
     }

@@ -187,11 +187,11 @@ manager = ConnectionManager()
 app = FastAPI(title="DJERBA CONSTRUCTION CRM API")
 api_router = APIRouter(prefix="/api")
 
-# CORS
+# CORS - Allow all origins for mobile compatibility
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000")],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -306,8 +306,8 @@ async def register(user: UserRegister):
         "name": user.name,
         "role": user.role
     })
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=3600, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=3600, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
     return response
 
 @api_router.post("/auth/login")
@@ -329,8 +329,8 @@ async def login(credentials: UserLogin):
         "name": user.get("name", ""),
         "role": user.get("role", "commercial")
     })
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=3600, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=3600, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
     return response
 
 @api_router.post("/auth/logout")
@@ -360,7 +360,7 @@ async def refresh_token(request: Request):
         
         access_token = create_access_token(str(user["_id"]), user["email"])
         response = JSONResponse(content={"message": "Token rafraîchi"})
-        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=3600, path="/")
+        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=3600, path="/")
         return response
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token invalide")
