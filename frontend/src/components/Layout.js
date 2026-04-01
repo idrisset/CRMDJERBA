@@ -22,16 +22,13 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 
-// Logo Component - Using original uploaded image (cropped to show just icon+text)
+// Logo Component - Using original uploaded image with dark blue background
 const Logo = () => (
-  <div className="h-12 w-28 overflow-hidden bg-white rounded p-1">
-    <img 
-      src="https://customer-assets.emergentagent.com/job_property-hub-612/artifacts/qshujqiw_IMG_1081.jpeg" 
-      alt="DJERBA CONSTRUCTION" 
-      className="h-auto w-full object-cover object-top"
-      style={{ height: '60px', objectPosition: 'top' }}
-    />
-  </div>
+  <img 
+    src="https://customer-assets.emergentagent.com/job_property-hub-612/artifacts/wry3uaf5_IMG_1081.jpeg" 
+    alt="DJERBA CONSTRUCTION" 
+    className="h-20 w-auto object-contain"
+  />
 );
 
 export function Layout({ children }) {

@@ -8,16 +8,13 @@ import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Loader2 } from 'lucide-react';
 
-// Logo Component - Using original uploaded image (top version with white background)
+// Logo Component - Using original uploaded image with dark blue background
 const Logo = () => (
-  <div className="h-24 w-32 overflow-hidden bg-white rounded-lg p-2">
-    <img 
-      src="https://customer-assets.emergentagent.com/job_property-hub-612/artifacts/qshujqiw_IMG_1081.jpeg" 
-      alt="DJERBA CONSTRUCTION" 
-      className="h-auto w-full object-cover object-top"
-      style={{ marginTop: '0', height: '120px', objectPosition: 'top' }}
-    />
-  </div>
+  <img 
+    src="https://customer-assets.emergentagent.com/job_property-hub-612/artifacts/wry3uaf5_IMG_1081.jpeg" 
+    alt="DJERBA CONSTRUCTION" 
+    className="h-28 w-auto object-contain rounded"
+  />
 );
 
 export function Login() {
