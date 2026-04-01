@@ -1,67 +1,94 @@
-# CRM Immobilier - Product Requirements Document
+# DJERBA CONSTRUCTION - CRM Immobilier PRD
 
 ## Original Problem Statement
-Application web CRM pour une entreprise immobilière. Système interne pour gérer les clients et les appartements avec:
-- Gestion des clients (nom, téléphone, email, salaire, situation familiale, notes, suivi: nouveau/intéressé/visite/réservé/vendu)
-- Gestion des appartements (3 résidences, type F2/F3, prix, étage, statut disponible/réservé/vendu)
-- Système multi-utilisateurs avec synchronisation temps réel
-- Tableau de bord avec statistiques
-- Intégration WhatsApp avec IA (GPT-5.2)
+Système CRM automatisé complet pour entreprise immobilière en Algérie avec:
+- Gestion clients avec température (chaud/tiède/froid) et statut pipeline
+- Gestion appartements par résidence
+- WhatsApp Business API avec IA GPT-5.2 automatique
+- Notifications email aux commerciaux
+- Export PDF/Excel
+- Interface multilingue (FR/AR/EN) avec RTL
+- Design luxe adapté au marché algérien
+
+## Brand Identity
+- **Nom**: DJERBA CONSTRUCTION
+- **Couleurs**: Navy Blue (#1E3A5F), Red (#C41E3A), White
+- **Numéro WhatsApp**: +213 770 481 500
 
 ## User Personas
-1. **Admin** - Gère les résidences, utilisateurs, configuration système
-2. **Commercial** - Gère les clients et appartements, suit les ventes
-
-## Core Requirements
-- Interface en français
-- Auth JWT email/password
-- Sync temps réel (WebSocket)
-- IA WhatsApp avec GPT-5.2
+1. **Admin** - Gère résidences, utilisateurs, notifications, configuration
+2. **Commercial** - Gère clients, appartements, répond aux leads
 
 ## What's Been Implemented (2026-03-31)
 
 ### Backend (FastAPI + MongoDB)
-- ✅ Auth JWT avec cookies httpOnly (login, register, logout, refresh)
-- ✅ CRUD Clients avec tous les champs et statuts
+- ✅ Auth JWT avec cookies httpOnly
+- ✅ CRUD Clients avec température (chaud/tiède/froid) et source (manual/whatsapp)
 - ✅ CRUD Appartements avec liaison client
 - ✅ CRUD Résidences (admin only)
-- ✅ Dashboard API avec statistiques
+- ✅ Dashboard API avec KPIs complets
 - ✅ WebSocket pour sync temps réel
+- ✅ Meta WhatsApp Business API webhook (vérifié, prêt pour production)
 - ✅ IA WhatsApp avec GPT-5.2 (emergentintegrations)
+- ✅ Auto-création leads depuis WhatsApp
+- ✅ Notifications email (Resend) aux commerciaux
+- ✅ Export Excel (openpyxl)
+- ✅ Export PDF (reportlab)
 - ✅ Admin seeding automatique
 
-### Frontend (React + Shadcn UI)
-- ✅ Page Login/Register
-- ✅ Dashboard avec KPIs (clients, appartements disponibles/réservés/vendus)
-- ✅ Page Clients avec filtres, CRUD complet
-- ✅ Page Appartements avec tabs par résidence, CRUD complet
-- ✅ Page Paramètres (admin) pour gérer résidences
-- ✅ Page IA WhatsApp avec test chat et historique
-- ✅ Layout avec sidebar, indicateur de connexion WebSocket
-- ✅ Design Swiss & High-Contrast, fonts Outfit/IBM Plex Sans
+### Frontend (React + Shadcn UI + Tailwind)
+- ✅ Design luxe Navy/Red/White
+- ✅ Multilingue FR/AR/EN avec RTL
+- ✅ Logo SVG DJERBA CONSTRUCTION
+- ✅ Page Login/Register avec background gradient
+- ✅ Dashboard avec tous les KPIs (leads chauds, WhatsApp leads)
+- ✅ Page Clients avec température, filtres, export
+- ✅ Page Appartements avec tabs par résidence
+- ✅ Page WhatsApp avec test chat et historique
+- ✅ Page Paramètres (notifications email, résidences, utilisateurs)
+- ✅ Layout avec sidebar Navy, indicateur WebSocket
+- ✅ Language switcher dans header
+
+## Configuration Required (Production)
+```env
+WHATSAPP_PHONE_NUMBER_ID=<from Meta Developer Console>
+META_ACCESS_TOKEN=<from Meta Developer Console>
+META_APP_SECRET=<for webhook signature verification>
+RESEND_API_KEY=<from Resend dashboard>
+SENDER_EMAIL=notifications@djerba-construction.com
+```
+
+## Webhook URL for Meta
+`https://property-hub-612.preview.emergentagent.com/api/whatsapp/webhook`
+Verify Token: `djerba_construction_whatsapp_verify_2024`
 
 ## Prioritized Backlog
 
 ### P0 (Done)
-- [x] Auth système
-- [x] CRUD Clients
+- [x] Auth système complet
+- [x] CRUD Clients avec température
 - [x] CRUD Appartements
-- [x] Dashboard stats
-- [x] Sync WebSocket
-- [x] IA WhatsApp
+- [x] Dashboard KPIs
+- [x] WebSocket sync
+- [x] IA WhatsApp GPT-5.2
+- [x] Multilingue FR/AR/EN + RTL
+- [x] Export PDF/Excel
+- [x] Design luxe DJERBA
 
-### P1 (Next)
-- [ ] Intégration WhatsApp réelle (webhook Twilio/Meta)
-- [ ] Export PDF/Excel des données
-- [ ] Filtres avancés clients
+### P1 (Production Ready)
+- [ ] Configurer Meta Business WhatsApp tokens
+- [ ] Configurer Resend API key
+- [ ] Ajouter domaine email personnalisé
 
 ### P2 (Future)
-- [ ] Notifications push
-- [ ] Historique des modifications
 - [ ] Rapports de performance commerciale
+- [ ] Historique des modifications
 - [ ] Mode sombre
+- [ ] App mobile
 
 ## Tech Stack
-- Backend: FastAPI, MongoDB (motor), JWT, bcrypt, WebSocket
+- Backend: FastAPI, MongoDB, JWT, bcrypt, WebSocket, Resend
 - Frontend: React 19, Shadcn UI, Tailwind CSS, Axios
 - AI: OpenAI GPT-5.2 via emergentintegrations
+- WhatsApp: Meta Business Cloud API
+- Email: Resend
