@@ -1,11 +1,23 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth, formatApiErrorDetail } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Building2, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+
+// Logo SVG
+const Logo = () => (
+  <svg viewBox="0 0 60 60" className="h-16 w-16" fill="none">
+    <path d="M30 8L8 24V52H24V38H36V52H52V24L30 8Z" fill="#C41E3A" />
+    <path d="M30 8L8 24H18L30 15L42 24H52L30 8Z" fill="#1E3A5F" />
+    <circle cx="30" cy="30" r="4" fill="white" />
+    <path d="M30 34V48" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+    <path d="M26 44H34" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+  </svg>
+);
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -13,6 +25,7 @@ export function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -31,29 +44,41 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-      <Card className="w-full max-w-md shadow-lg border-slate-200">
+    <div 
+      className="min-h-screen flex items-center justify-center px-4 relative"
+      style={{
+        background: 'linear-gradient(135deg, #1E3A5F 0%, #122339 100%)'
+      }}
+    >
+      {/* Abstract pattern overlay */}
+      <div className="absolute inset-0 opacity-10">
+        <div className="absolute top-20 start-20 w-64 h-64 border border-white/20 rounded-full"></div>
+        <div className="absolute bottom-20 end-20 w-96 h-96 border border-white/20 rounded-full"></div>
+        <div className="absolute top-1/2 start-1/3 w-48 h-48 border border-white/20 rounded-full"></div>
+      </div>
+
+      <Card className="w-full max-w-md shadow-2xl border-0 bg-white/95 backdrop-blur relative z-10">
         <CardHeader className="text-center pb-2">
-          <div className="mx-auto mb-4 h-14 w-14 rounded-xl bg-blue-600 flex items-center justify-center">
-            <Building2 className="h-8 w-8 text-white" />
+          <div className="mx-auto mb-4">
+            <Logo />
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight font-['Outfit']">
-            CRM Immobilier
+          <CardTitle className="text-2xl font-light tracking-tight text-[#1E3A5F] font-['Outfit']">
+            DJERBA CONSTRUCTION
           </CardTitle>
-          <CardDescription>
-            Connectez-vous pour accéder au système
+          <CardDescription className="text-slate-500">
+            {t('login')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="p-3 rounded-md bg-red-50 text-red-600 text-sm" data-testid="login-error">
+              <div className="p-3 rounded bg-red-50 text-red-600 text-sm border border-red-200" data-testid="login-error">
                 {error}
               </div>
             )}
             
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="text-slate-600">{t('email')}</Label>
               <Input
                 id="email"
                 type="email"
@@ -61,12 +86,13 @@ export function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                className="border-slate-200 focus:border-[#1E3A5F] focus:ring-[#1E3A5F]"
                 data-testid="login-email"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Mot de passe</Label>
+              <Label htmlFor="password" className="text-slate-600">{t('password')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -74,31 +100,32 @@ export function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                className="border-slate-200 focus:border-[#1E3A5F] focus:ring-[#1E3A5F]"
                 data-testid="login-password"
               />
             </div>
 
             <Button
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700"
+              className="w-full bg-[#1E3A5F] hover:bg-[#2A4D7C] text-white"
               disabled={loading}
               data-testid="login-submit"
             >
               {loading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Connexion...
+                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                  {t('loading')}
                 </>
               ) : (
-                'Se connecter'
+                t('signIn')
               )}
             </Button>
           </form>
 
-          <div className="mt-4 text-center text-sm text-slate-600">
-            Pas encore de compte?{' '}
-            <Link to="/register" className="text-blue-600 hover:underline" data-testid="register-link">
-              Créer un compte
+          <div className="mt-6 text-center text-sm text-slate-600">
+            {t('noAccount')}{' '}
+            <Link to="/register" className="text-[#C41E3A] hover:underline font-medium" data-testid="register-link">
+              {t('createAccount')}
             </Link>
           </div>
         </CardContent>

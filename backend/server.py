@@ -1,7 +1,8 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, WebSocket, WebSocketDisconnect, Response
+from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -10,17 +11,30 @@ import os
 import logging
 import bcrypt
 import jwt
-import secrets
+import hmac
+import hashlib
+import asyncio
+import resend
+import json
+import io
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
-import asyncio
-import json
+from openpyxl import Workbook
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.units import cm
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
+
+# Resend config
+resend.api_key = os.environ.get("RESEND_API_KEY", "")
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
 
 # JWT Config
 JWT_ALGORITHM = "HS256"
@@ -98,6 +112,7 @@ class ClientCreate(BaseModel):
     situation_familiale: Optional[str] = None
     notes: Optional[str] = None
     statut: str = "nouveau"
+    temperature: str = "froid"  # chaud, tiède, froid
 
 class ClientUpdate(BaseModel):
     nom: Optional[str] = None
@@ -107,6 +122,7 @@ class ClientUpdate(BaseModel):
     situation_familiale: Optional[str] = None
     notes: Optional[str] = None
     statut: Optional[str] = None
+    temperature: Optional[str] = None
     appartement_id: Optional[str] = None
 
 class ResidenceCreate(BaseModel):
@@ -141,6 +157,10 @@ class WhatsAppMessage(BaseModel):
     phone: str
     message: str
 
+class NotificationSettings(BaseModel):
+    email_enabled: bool = True
+    notification_emails: List[str] = []
+
 # WebSocket Manager
 class ConnectionManager:
     def __init__(self):
@@ -164,7 +184,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # Create the app
-app = FastAPI()
+app = FastAPI(title="DJERBA CONSTRUCTION CRM API")
 api_router = APIRouter(prefix="/api")
 
 # CORS
@@ -179,6 +199,86 @@ app.add_middleware(
 # Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# ============ HELPER FUNCTIONS ============
+async def send_notification_email(subject: str, html_content: str):
+    """Send notification email to all configured recipients"""
+    try:
+        settings = await db.settings.find_one({"type": "notifications"})
+        if not settings or not settings.get("email_enabled"):
+            return
+        
+        recipients = settings.get("notification_emails", [])
+        if not recipients:
+            return
+        
+        for email in recipients:
+            params = {
+                "from": SENDER_EMAIL,
+                "to": [email],
+                "subject": subject,
+                "html": html_content
+            }
+            await asyncio.to_thread(resend.Emails.send, params)
+            logger.info(f"Notification email sent to {email}")
+    except Exception as e:
+        logger.error(f"Failed to send notification email: {e}")
+
+async def create_lead_from_whatsapp(phone: str, message: str, ai_response: str):
+    """Create or update lead from WhatsApp conversation"""
+    existing = await db.clients.find_one({"telephone": phone})
+    
+    if not existing:
+        # Create new lead
+        lead_doc = {
+            "nom": f"Lead WhatsApp {phone[-4:]}",
+            "telephone": phone,
+            "email": None,
+            "salaire": None,
+            "situation_familiale": None,
+            "notes": f"Premier message: {message}",
+            "statut": "nouveau",
+            "temperature": "tiède",
+            "source": "whatsapp",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": "whatsapp_bot"
+        }
+        result = await db.clients.insert_one(lead_doc)
+        
+        # Send notification
+        await send_notification_email(
+            subject="🔔 Nouveau lead WhatsApp - DJERBA CONSTRUCTION",
+            html_content=f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background: #1E3A5F; color: white; padding: 20px; text-align: center;">
+                    <h1 style="margin: 0;">DJERBA CONSTRUCTION</h1>
+                </div>
+                <div style="padding: 20px; background: #f8f9fa;">
+                    <h2 style="color: #1E3A5F;">Nouveau lead reçu via WhatsApp</h2>
+                    <p><strong>Téléphone:</strong> {phone}</p>
+                    <p><strong>Message:</strong> {message}</p>
+                    <p><strong>Réponse IA:</strong> {ai_response[:200]}...</p>
+                    <a href="{os.environ.get('FRONTEND_URL')}/clients" 
+                       style="display: inline-block; background: #C41E3A; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">
+                        Voir dans le CRM
+                    </a>
+                </div>
+            </div>
+            """
+        )
+        
+        await manager.broadcast({"type": "new_lead", "data": {"phone": phone}})
+        return str(result.inserted_id)
+    else:
+        # Update existing client notes
+        await db.clients.update_one(
+            {"telephone": phone},
+            {"$set": {
+                "notes": f"{existing.get('notes', '')}\n\n[{datetime.now().strftime('%d/%m/%Y %H:%M')}] {message}",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        return str(existing["_id"])
 
 # ============ AUTH ROUTES ============
 @api_router.post("/auth/register")
@@ -268,7 +368,6 @@ async def refresh_token(request: Request):
 # ============ CLIENTS ROUTES ============
 @api_router.get("/clients")
 async def get_clients(current_user: dict = Depends(get_current_user)):
-    clients = await db.clients.find({}, {"_id": 0, "id": {"$toString": "$_id"}}).to_list(1000)
     result = []
     async for c in db.clients.find({}):
         client_data = {
@@ -280,7 +379,9 @@ async def get_clients(current_user: dict = Depends(get_current_user)):
             "situation_familiale": c.get("situation_familiale", ""),
             "notes": c.get("notes", ""),
             "statut": c.get("statut", "nouveau"),
+            "temperature": c.get("temperature", "froid"),
             "appartement_id": c.get("appartement_id"),
+            "source": c.get("source", "manual"),
             "created_at": c.get("created_at", ""),
             "created_by": c.get("created_by", "")
         }
@@ -291,6 +392,7 @@ async def get_clients(current_user: dict = Depends(get_current_user)):
 async def create_client(client: ClientCreate, current_user: dict = Depends(get_current_user)):
     client_doc = {
         **client.model_dump(),
+        "source": "manual",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": current_user["_id"]
     }
@@ -309,7 +411,6 @@ async def update_client(client_id: str, client: ClientUpdate, current_user: dict
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     update_data["updated_by"] = current_user["_id"]
     
-    # If client status is "réservé" and has apartment_id, update apartment status
     if client.statut == "réservé" and client.appartement_id:
         await db.appartements.update_one(
             {"_id": ObjectId(client.appartement_id)},
@@ -437,7 +538,6 @@ async def update_appartement(appart_id: str, appart: AppartementUpdate, current_
     if not update_data:
         raise HTTPException(status_code=400, detail="Aucune donnée à mettre à jour")
     
-    # If apartment is reserved with a client, update client's apartment_id
     if appart.statut == "réservé" and appart.client_id:
         await db.clients.update_one(
             {"_id": ObjectId(appart.client_id)},
@@ -475,20 +575,28 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
     apparts_reserves = await db.appartements.count_documents({"statut": "réservé"})
     apparts_vendus = await db.appartements.count_documents({"statut": "vendu"})
     
-    # Client status breakdown
     clients_nouveau = await db.clients.count_documents({"statut": "nouveau"})
     clients_interesse = await db.clients.count_documents({"statut": "intéressé"})
     clients_visite = await db.clients.count_documents({"statut": "visite"})
     clients_reserve = await db.clients.count_documents({"statut": "réservé"})
     clients_vendu = await db.clients.count_documents({"statut": "vendu"})
     
-    # Recent activities
+    # Temperature breakdown
+    clients_chaud = await db.clients.count_documents({"temperature": "chaud"})
+    clients_tiede = await db.clients.count_documents({"temperature": "tiède"})
+    clients_froid = await db.clients.count_documents({"temperature": "froid"})
+    
+    # WhatsApp leads
+    whatsapp_leads = await db.clients.count_documents({"source": "whatsapp"})
+    
     recent_clients = []
     async for c in db.clients.find({}).sort("created_at", -1).limit(5):
         recent_clients.append({
             "id": str(c["_id"]),
             "nom": c.get("nom", ""),
             "statut": c.get("statut", ""),
+            "temperature": c.get("temperature", "froid"),
+            "source": c.get("source", "manual"),
             "created_at": c.get("created_at", "")
         })
     
@@ -505,12 +613,111 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
             "réservé": clients_reserve,
             "vendu": clients_vendu
         },
+        "clients_par_temperature": {
+            "chaud": clients_chaud,
+            "tiède": clients_tiede,
+            "froid": clients_froid
+        },
+        "whatsapp_leads": whatsapp_leads,
         "recent_clients": recent_clients
     }
 
-# ============ WHATSAPP AI ROUTES ============
-@api_router.post("/whatsapp/message")
-async def handle_whatsapp_message(msg: WhatsAppMessage, current_user: dict = Depends(get_current_user)):
+# ============ WHATSAPP WEBHOOK (Meta Business API) ============
+@api_router.get("/whatsapp/webhook")
+async def verify_whatsapp_webhook(request: Request):
+    """Verify webhook for Meta WhatsApp Business API"""
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+    
+    verify_token = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")
+    
+    if mode == "subscribe" and token == verify_token:
+        logger.info("WhatsApp webhook verified")
+        return Response(content=challenge, status_code=200)
+    
+    logger.warning("WhatsApp webhook verification failed")
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+@api_router.post("/whatsapp/webhook")
+async def handle_whatsapp_webhook(request: Request):
+    """Handle incoming WhatsApp messages from Meta Business API"""
+    body = await request.body()
+    
+    # Verify signature (if APP_SECRET is configured)
+    app_secret = os.environ.get("META_APP_SECRET", "")
+    if app_secret:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        if signature.startswith("sha256="):
+            expected_signature = signature[7:]
+            computed_hash = hmac.new(
+                app_secret.encode('utf-8'),
+                body,
+                hashlib.sha256
+            ).hexdigest()
+            if not hmac.compare_digest(computed_hash, expected_signature):
+                logger.error("Invalid WhatsApp webhook signature")
+                raise HTTPException(status_code=403, detail="Invalid signature")
+    
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    
+    if payload.get("object") != "whatsapp_business_account":
+        return JSONResponse(status_code=200, content={"status": "ok"})
+    
+    # Process messages asynchronously
+    asyncio.create_task(process_whatsapp_webhook(payload))
+    
+    return JSONResponse(status_code=200, content={"status": "ok"})
+
+async def process_whatsapp_webhook(payload: dict):
+    """Process incoming WhatsApp messages"""
+    try:
+        for entry in payload.get("entry", []):
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                
+                if "messages" in value:
+                    for message in value.get("messages", []):
+                        await handle_incoming_whatsapp_message(message)
+    except Exception as e:
+        logger.error(f"WhatsApp webhook processing error: {e}")
+
+async def handle_incoming_whatsapp_message(message: dict):
+    """Handle a single incoming WhatsApp message"""
+    message_id = message.get("id")
+    sender = message.get("from")
+    message_type = message.get("type", "text")
+    
+    if message_type != "text":
+        return
+    
+    message_content = message.get("text", {}).get("body", "")
+    
+    logger.info(f"WhatsApp message from {sender}: {message_content}")
+    
+    # Generate AI response
+    ai_response = await generate_whatsapp_ai_response(sender, message_content)
+    
+    # Store conversation
+    await db.whatsapp_conversations.insert_one({
+        "message_id": message_id,
+        "phone": sender,
+        "user_message": message_content,
+        "ai_response": ai_response,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    # Create or update lead
+    await create_lead_from_whatsapp(sender, message_content, ai_response)
+    
+    # Send response via WhatsApp API (if configured)
+    await send_whatsapp_message(sender, ai_response)
+
+async def generate_whatsapp_ai_response(phone: str, message: str) -> str:
+    """Generate AI response for WhatsApp message"""
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         
@@ -524,40 +731,86 @@ async def handle_whatsapp_message(msg: WhatsAppMessage, current_user: dict = Dep
             appartements.append({
                 "type": a.get("type_appart", ""),
                 "prix": a.get("prix", 0),
-                "etage": a.get("etage", 0)
+                "etage": a.get("etage", 0),
+                "surface": a.get("surface", 0)
             })
         
-        system_message = f"""Tu es un assistant immobilier professionnel pour une agence immobilière.
-Tu réponds en français de manière courtoise et professionnelle.
+        system_message = f"""Tu es l'assistant virtuel de DJERBA CONSTRUCTION, une entreprise immobilière de qualité.
+Tu réponds en français, en arabe ou en anglais selon la langue du client.
 Tu dois:
 1. Répondre aux questions sur les appartements disponibles
-2. Poser des questions pour qualifier le prospect (budget, type recherché, situation familiale)
-3. Collecter les informations de contact
+2. Poser des questions pour qualifier le prospect (budget, type recherché, localisation)
+3. Collecter les informations de contact (nom, email si possible)
+4. Être professionnel et accueillant
 
-Résidences disponibles: {', '.join(residences) if residences else 'Non configurées'}
-Appartements disponibles: {len(appartements)} appartements
-Types: {', '.join(set(a['type'] for a in appartements)) if appartements else 'Aucun'}
-Fourchette de prix: {min(a['prix'] for a in appartements) if appartements else 0}€ - {max(a['prix'] for a in appartements) if appartements else 0}€
+Résidences disponibles: {', '.join(residences) if residences else 'Nos résidences premium'}
+Appartements disponibles: {len(appartements)}
+Types: {', '.join(set(a['type'] for a in appartements)) if appartements else 'F2, F3, F4'}
+Prix: {min(a['prix'] for a in appartements) if appartements else 0:,.0f} DA - {max(a['prix'] for a in appartements) if appartements else 0:,.0f} DA
+
+Sois concis et professionnel. Maximum 2-3 phrases par réponse.
 """
         
         chat = LlmChat(
             api_key=os.environ.get("EMERGENT_LLM_KEY"),
-            session_id=f"whatsapp_{msg.phone}",
+            session_id=f"whatsapp_{phone}",
             system_message=system_message
         ).with_model("openai", "gpt-5.2")
         
-        user_message = UserMessage(text=msg.message)
+        user_message = UserMessage(text=message)
         response = await chat.send_message(user_message)
         
-        # Store conversation
+        return response
+    except Exception as e:
+        logger.error(f"WhatsApp AI error: {e}")
+        return "Merci pour votre message. Un de nos conseillers vous contactera bientôt. للتواصل: +213770481500"
+
+async def send_whatsapp_message(recipient: str, message: str):
+    """Send WhatsApp message via Meta Business API"""
+    import requests
+    
+    phone_number_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+    access_token = os.environ.get("META_ACCESS_TOKEN", "")
+    
+    if not phone_number_id or not access_token:
+        logger.warning("WhatsApp API not configured - message not sent")
+        return
+    
+    url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": recipient,
+        "type": "text",
+        "text": {"body": message}
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        response.raise_for_status()
+        logger.info(f"WhatsApp message sent to {recipient}")
+    except Exception as e:
+        logger.error(f"Failed to send WhatsApp message: {e}")
+
+# ============ WHATSAPP TEST ROUTES ============
+@api_router.post("/whatsapp/message")
+async def test_whatsapp_message(msg: WhatsAppMessage, current_user: dict = Depends(get_current_user)):
+    """Test WhatsApp AI response"""
+    try:
+        ai_response = await generate_whatsapp_ai_response(msg.phone, msg.message)
+        
         await db.whatsapp_conversations.insert_one({
             "phone": msg.phone,
             "user_message": msg.message,
-            "ai_response": response,
+            "ai_response": ai_response,
+            "test": True,
             "created_at": datetime.now(timezone.utc).isoformat()
         })
         
-        return {"response": response, "phone": msg.phone}
+        return {"response": ai_response, "phone": msg.phone}
     except Exception as e:
         logger.error(f"WhatsApp AI error: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur IA: {str(e)}")
@@ -574,6 +827,160 @@ async def get_whatsapp_conversations(current_user: dict = Depends(get_current_us
             "created_at": c.get("created_at", "")
         })
     return result
+
+# ============ SETTINGS ROUTES ============
+@api_router.get("/settings/notifications")
+async def get_notification_settings(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Accès réservé à l'admin")
+    
+    settings = await db.settings.find_one({"type": "notifications"})
+    if not settings:
+        return {"email_enabled": False, "notification_emails": []}
+    
+    return {
+        "email_enabled": settings.get("email_enabled", False),
+        "notification_emails": settings.get("notification_emails", [])
+    }
+
+@api_router.put("/settings/notifications")
+async def update_notification_settings(settings: NotificationSettings, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Accès réservé à l'admin")
+    
+    await db.settings.update_one(
+        {"type": "notifications"},
+        {"$set": {
+            "type": "notifications",
+            "email_enabled": settings.email_enabled,
+            "notification_emails": settings.notification_emails,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }},
+        upsert=True
+    )
+    
+    return {"message": "Paramètres mis à jour"}
+
+# ============ EXPORT ROUTES ============
+@api_router.get("/export/clients/excel")
+async def export_clients_excel(current_user: dict = Depends(get_current_user)):
+    """Export clients to Excel"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Clients"
+    
+    # Headers
+    headers = ["Nom", "Téléphone", "Email", "Salaire", "Situation", "Statut", "Température", "Source", "Date création"]
+    ws.append(headers)
+    
+    # Data
+    async for c in db.clients.find({}):
+        ws.append([
+            c.get("nom", ""),
+            c.get("telephone", ""),
+            c.get("email", ""),
+            c.get("salaire", ""),
+            c.get("situation_familiale", ""),
+            c.get("statut", ""),
+            c.get("temperature", ""),
+            c.get("source", "manual"),
+            c.get("created_at", "")
+        ])
+    
+    # Save to bytes
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=clients_{datetime.now().strftime('%Y%m%d')}.xlsx"}
+    )
+
+@api_router.get("/export/appartements/excel")
+async def export_appartements_excel(current_user: dict = Depends(get_current_user)):
+    """Export apartments to Excel"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Appartements"
+    
+    # Get residences for mapping
+    residences = {}
+    async for r in db.residences.find({}):
+        residences[str(r["_id"])] = r.get("nom", "")
+    
+    # Headers
+    headers = ["Résidence", "Type", "Prix (DA)", "Étage", "Surface (m²)", "Statut"]
+    ws.append(headers)
+    
+    # Data
+    async for a in db.appartements.find({}):
+        ws.append([
+            residences.get(a.get("residence_id", ""), ""),
+            a.get("type_appart", ""),
+            a.get("prix", 0),
+            a.get("etage", 0),
+            a.get("surface", ""),
+            a.get("statut", "")
+        ])
+    
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=appartements_{datetime.now().strftime('%Y%m%d')}.xlsx"}
+    )
+
+@api_router.get("/export/clients/pdf")
+async def export_clients_pdf(current_user: dict = Depends(get_current_user)):
+    """Export clients to PDF"""
+    output = io.BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=A4, topMargin=1*cm, bottomMargin=1*cm)
+    
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Title
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#1E3A5F'))
+    elements.append(Paragraph("DJERBA CONSTRUCTION - Liste des Clients", title_style))
+    elements.append(Spacer(1, 0.5*cm))
+    
+    # Table data
+    data = [["Nom", "Téléphone", "Statut", "Température"]]
+    
+    async for c in db.clients.find({}):
+        data.append([
+            c.get("nom", "")[:20],
+            c.get("telephone", ""),
+            c.get("statut", ""),
+            c.get("temperature", "")
+        ])
+    
+    if len(data) > 1:
+        table = Table(data, colWidths=[6*cm, 4*cm, 3*cm, 3*cm])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F9FA')])
+        ]))
+        elements.append(table)
+    
+    doc.build(elements)
+    output.seek(0)
+    
+    return StreamingResponse(
+        output,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=clients_{datetime.now().strftime('%Y%m%d')}.pdf"}
+    )
 
 # ============ USERS ROUTES (Admin only) ============
 @api_router.get("/users")
@@ -599,7 +1006,6 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            # Broadcast any received message to all clients
             await manager.broadcast({"type": "message", "data": data})
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -610,15 +1016,13 @@ app.include_router(api_router)
 # Root endpoint
 @api_router.get("/")
 async def root():
-    return {"message": "CRM Immobilier API"}
+    return {"message": "DJERBA CONSTRUCTION CRM API", "version": "2.0"}
 
-# Startup event - Seed admin and default residences
+# Startup event
 @app.on_event("startup")
 async def startup_event():
-    # Create indexes
     await db.users.create_index("email", unique=True)
     
-    # Seed admin
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@immo.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     
@@ -640,7 +1044,7 @@ async def startup_event():
         )
         logger.info(f"Admin password updated: {admin_email}")
     
-    # Seed default residences if none exist
+    # Seed default residences
     residences_count = await db.residences.count_documents({})
     if residences_count == 0:
         default_residences = [
@@ -667,7 +1071,10 @@ async def startup_event():
 - POST /api/auth/register
 - POST /api/auth/logout
 - GET /api/auth/me
-- POST /api/auth/refresh
+
+## WhatsApp Webhook
+- GET /api/whatsapp/webhook (verification)
+- POST /api/whatsapp/webhook (messages)
 """)
 
 @app.on_event("shutdown")

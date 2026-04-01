@@ -3,6 +3,7 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { WebSocketProvider } from "./contexts/WebSocketContext";
+import { LanguageProvider } from "./contexts/LanguageContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
@@ -16,73 +17,75 @@ import { Toaster } from "./components/ui/sonner";
 
 function App() {
   return (
-    <AuthProvider>
-      <WebSocketProvider>
-        <Toaster position="top-right" richColors />
-        <BrowserRouter>
-          <Routes>
-            {/* Public routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+    <LanguageProvider>
+      <AuthProvider>
+        <WebSocketProvider>
+          <Toaster position="top-right" richColors />
+          <BrowserRouter>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
 
-            {/* Protected routes */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Dashboard />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/clients"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Clients />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/appartements"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Appartements />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/whatsapp"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <WhatsApp />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/parametres"
-              element={
-                <ProtectedRoute>
-                  <Layout>
-                    <Parametres />
-                  </Layout>
-                </ProtectedRoute>
-              }
-            />
+              {/* Protected routes */}
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <Dashboard />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/clients"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <Clients />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/appartements"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <Appartements />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/whatsapp"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <WhatsApp />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/parametres"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <Parametres />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
 
-            {/* Redirect unknown routes */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </WebSocketProvider>
-    </AuthProvider>
+              {/* Redirect unknown routes */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </WebSocketProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }
 

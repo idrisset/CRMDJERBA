@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useWebSocket } from '../contexts/WebSocketContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Users, Building2, Calendar, TrendingUp, MessageSquare } from 'lucide-react';
+import { Users, Building2, Calendar, TrendingUp, MessageSquare, Flame, Thermometer } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -11,6 +12,7 @@ export function Dashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const { lastMessage } = useWebSocket();
+  const { t } = useLanguage();
 
   const fetchStats = async () => {
     try {
@@ -27,7 +29,6 @@ export function Dashboard() {
     fetchStats();
   }, []);
 
-  // Refresh on WebSocket updates
   useEffect(() => {
     if (lastMessage) {
       fetchStats();
@@ -37,70 +38,90 @@ export function Dashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-pulse text-slate-400">Chargement...</div>
+        <div className="animate-pulse text-slate-400">{t('loading')}</div>
       </div>
     );
   }
 
   const statCards = [
     {
-      title: 'Total Clients',
+      title: t('totalClients'),
       value: stats?.total_clients || 0,
       icon: Users,
-      color: 'text-blue-600',
+      color: 'text-[#1E3A5F]',
       bg: 'bg-blue-50'
     },
     {
-      title: 'Appartements Disponibles',
+      title: t('availableApts'),
       value: stats?.appartements_disponibles || 0,
       icon: Building2,
       color: 'text-emerald-600',
       bg: 'bg-emerald-50'
     },
     {
-      title: 'Appartements Réservés',
+      title: t('reservedApts'),
       value: stats?.appartements_reserves || 0,
       icon: Calendar,
       color: 'text-amber-600',
       bg: 'bg-amber-50'
     },
     {
-      title: 'Appartements Vendus',
+      title: t('soldApts'),
       value: stats?.appartements_vendus || 0,
       icon: TrendingUp,
       color: 'text-slate-600',
       bg: 'bg-slate-100'
+    },
+    {
+      title: t('hotLeads'),
+      value: stats?.clients_par_temperature?.chaud || 0,
+      icon: Flame,
+      color: 'text-[#C41E3A]',
+      bg: 'bg-red-50'
+    },
+    {
+      title: t('whatsappLeads'),
+      value: stats?.whatsapp_leads || 0,
+      icon: MessageSquare,
+      color: 'text-green-600',
+      bg: 'bg-green-50'
     }
   ];
 
   const clientStatuses = [
-    { key: 'nouveau', label: 'Nouveaux', color: 'bg-blue-100 text-blue-800' },
-    { key: 'intéressé', label: 'Intéressés', color: 'bg-violet-100 text-violet-800' },
-    { key: 'visite', label: 'Visite', color: 'bg-cyan-100 text-cyan-800' },
-    { key: 'réservé', label: 'Réservés', color: 'bg-amber-100 text-amber-800' },
-    { key: 'vendu', label: 'Vendus', color: 'bg-slate-200 text-slate-700' }
+    { key: 'nouveau', label: t('new'), color: 'bg-blue-100 text-blue-800 border-blue-200' },
+    { key: 'intéressé', label: t('interested'), color: 'bg-violet-100 text-violet-800 border-violet-200' },
+    { key: 'visite', label: t('visit'), color: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
+    { key: 'réservé', label: t('reserved'), color: 'bg-amber-100 text-amber-800 border-amber-200' },
+    { key: 'vendu', label: t('sold'), color: 'bg-slate-200 text-slate-700 border-slate-300' }
+  ];
+
+  const temperatures = [
+    { key: 'chaud', label: t('hot'), color: 'bg-red-100 text-red-800 border-red-200', icon: '🔥' },
+    { key: 'tiède', label: t('warm'), color: 'bg-amber-100 text-amber-800 border-amber-200', icon: '🌡️' },
+    { key: 'froid', label: t('cold'), color: 'bg-slate-100 text-slate-700 border-slate-200', icon: '❄️' }
   ];
 
   return (
     <div className="space-y-8 fade-in" data-testid="dashboard">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900 font-['Outfit']">
-          Tableau de bord
+        <h1 className="text-3xl md:text-4xl font-light tracking-tight text-[#1E3A5F] font-['Outfit']">
+          {t('dashboard')}
         </h1>
-        <p className="text-slate-500 mt-1">Vue d'ensemble de votre activité immobilière</p>
+        <p className="text-slate-500 mt-1">{t('overview')}</p>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 stagger-fade-in">
         {statCards.map((stat) => (
-          <Card key={stat.title} className="card-stat" data-testid={`stat-${stat.title.toLowerCase().replace(/\s/g, '-')}`}>
+          <Card key={stat.title} className="card-luxury" data-testid={`stat-${stat.title.toLowerCase().replace(/\s/g, '-')}`}>
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-slate-500">{stat.title}</p>
-                  <p className="text-3xl font-bold text-slate-900 mt-1">{stat.value}</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{stat.title}</p>
+                  <p className="text-3xl font-light text-[#0F1D30] mt-1">{stat.value}</p>
                 </div>
-                <div className={`h-12 w-12 rounded-lg ${stat.bg} flex items-center justify-center`}>
+                <div className={`h-12 w-12 rounded ${stat.bg} flex items-center justify-center`}>
                   <stat.icon className={`h-6 w-6 ${stat.color}`} />
                 </div>
               </div>
@@ -109,20 +130,18 @@ export function Dashboard() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Clients par statut */}
-        <Card data-testid="clients-by-status">
+        <Card className="card-luxury" data-testid="clients-by-status">
           <CardHeader>
-            <CardTitle className="text-lg font-semibold font-['Outfit']">Clients par statut</CardTitle>
+            <CardTitle className="text-lg font-medium text-[#1E3A5F] font-['Outfit']">{t('clientsByStatus')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {clientStatuses.map((status) => (
-                <div key={status.key} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Badge className={status.color}>{status.label}</Badge>
-                  </div>
-                  <span className="text-xl font-semibold text-slate-900">
+                <div key={status.key} className="flex items-center justify-between p-3 rounded bg-slate-50">
+                  <Badge className={`${status.color} border`}>{status.label}</Badge>
+                  <span className="text-xl font-light text-slate-900">
                     {stats?.clients_par_statut?.[status.key] || 0}
                   </span>
                 </div>
@@ -131,53 +150,86 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Derniers clients */}
-        <Card data-testid="recent-clients">
+        {/* Température des leads */}
+        <Card className="card-luxury" data-testid="clients-by-temperature">
           <CardHeader>
-            <CardTitle className="text-lg font-semibold font-['Outfit']">Derniers clients</CardTitle>
+            <CardTitle className="text-lg font-medium text-[#1E3A5F] font-['Outfit'] flex items-center gap-2">
+              <Thermometer className="h-5 w-5" />
+              {t('temperature')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {temperatures.map((temp) => (
+                <div key={temp.key} className="flex items-center justify-between p-3 rounded bg-slate-50">
+                  <div className="flex items-center gap-2">
+                    <span>{temp.icon}</span>
+                    <Badge className={`${temp.color} border`}>{temp.label}</Badge>
+                  </div>
+                  <span className="text-xl font-light text-slate-900">
+                    {stats?.clients_par_temperature?.[temp.key] || 0}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Derniers clients */}
+        <Card className="card-luxury" data-testid="recent-clients">
+          <CardHeader>
+            <CardTitle className="text-lg font-medium text-[#1E3A5F] font-['Outfit']">{t('recentClients')}</CardTitle>
           </CardHeader>
           <CardContent>
             {stats?.recent_clients?.length > 0 ? (
               <div className="space-y-3">
                 {stats.recent_clients.map((client) => (
-                  <div key={client.id} className="flex items-center justify-between p-3 rounded-lg bg-slate-50">
+                  <div key={client.id} className="flex items-center justify-between p-3 rounded bg-slate-50">
                     <div>
                       <p className="font-medium text-slate-900">{client.nom}</p>
-                      <p className="text-sm text-slate-500">
-                        {new Date(client.created_at).toLocaleDateString('fr-FR')}
-                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {client.source === 'whatsapp' && (
+                          <MessageSquare className="h-3 w-3 text-green-500" />
+                        )}
+                        <p className="text-xs text-slate-500">
+                          {new Date(client.created_at).toLocaleDateString('fr-FR')}
+                        </p>
+                      </div>
                     </div>
-                    <Badge className={
-                      client.statut === 'nouveau' ? 'bg-blue-100 text-blue-800' :
-                      client.statut === 'intéressé' ? 'bg-violet-100 text-violet-800' :
-                      client.statut === 'visite' ? 'bg-cyan-100 text-cyan-800' :
-                      client.statut === 'réservé' ? 'bg-amber-100 text-amber-800' :
-                      'bg-slate-200 text-slate-700'
-                    }>
-                      {client.statut}
-                    </Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge className={
+                        client.temperature === 'chaud' ? 'bg-red-100 text-red-800 border border-red-200' :
+                        client.temperature === 'tiède' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                        'bg-slate-100 text-slate-700 border border-slate-200'
+                      }>
+                        {client.temperature === 'chaud' ? t('hot') : 
+                         client.temperature === 'tiède' ? t('warm') : t('cold')}
+                      </Badge>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-slate-500 text-center py-8">Aucun client récent</p>
+              <p className="text-slate-500 text-center py-8">{t('noClients')}</p>
             )}
           </CardContent>
         </Card>
       </div>
 
       {/* WhatsApp AI Status */}
-      <Card data-testid="whatsapp-status">
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold font-['Outfit'] flex items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-green-500" />
-            Statut IA WhatsApp
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-3">
-            <div className="h-3 w-3 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="text-slate-600">Agent IA actif et prêt à répondre</span>
+      <Card className="card-luxury border-s-4 border-s-green-500" data-testid="whatsapp-status">
+        <CardContent className="py-4">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded bg-green-50 flex items-center justify-center">
+              <MessageSquare className="h-6 w-6 text-green-500" />
+            </div>
+            <div>
+              <p className="font-medium text-slate-900">{t('whatsapp')} - GPT-5.2</p>
+              <div className="flex items-center gap-2 mt-1">
+                <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+                <span className="text-sm text-slate-600">{t('aiActive')}</span>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>

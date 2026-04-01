@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useWebSocket } from '../contexts/WebSocketContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -23,17 +24,12 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { Textarea } from '../components/ui/textarea';
-import { Plus, Pencil, Trash2, Building2, Loader2, Home } from 'lucide-react';
+import { Plus, Pencil, Trash2, Building2, Loader2, Home, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const APPART_TYPES = ['F1', 'F2', 'F3', 'F4', 'F5', 'Studio', 'Duplex'];
-const APPART_STATUSES = [
-  { value: 'disponible', label: 'Disponible', color: 'bg-emerald-100 text-emerald-800' },
-  { value: 'réservé', label: 'Réservé', color: 'bg-amber-100 text-amber-800' },
-  { value: 'vendu', label: 'Vendu', color: 'bg-slate-200 text-slate-700' },
-];
 
 export function Appartements() {
   const [appartements, setAppartements] = useState([]);
@@ -45,6 +41,13 @@ export function Appartements() {
   const [editingAppart, setEditingAppart] = useState(null);
   const [saving, setSaving] = useState(false);
   const { lastMessage } = useWebSocket();
+  const { t } = useLanguage();
+
+  const APPART_STATUSES = [
+    { value: 'disponible', label: t('available'), color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+    { value: 'réservé', label: t('reserved'), color: 'bg-amber-100 text-amber-800 border-amber-200' },
+    { value: 'vendu', label: t('sold'), color: 'bg-slate-200 text-slate-700 border-slate-300' },
+  ];
 
   const [formData, setFormData] = useState({
     residence_id: '',
@@ -72,7 +75,7 @@ export function Appartements() {
         setSelectedResidence(residencesRes.data[0].id);
       }
     } catch (e) {
-      toast.error('Erreur lors du chargement des données');
+      toast.error(t('error'));
     } finally {
       setLoading(false);
     }
@@ -137,37 +140,41 @@ export function Appartements() {
     try {
       if (editingAppart) {
         await axios.put(`${API}/appartements/${editingAppart.id}`, payload, { withCredentials: true });
-        toast.success('Appartement mis à jour');
+        toast.success(t('success'));
       } else {
         await axios.post(`${API}/appartements`, payload, { withCredentials: true });
-        toast.success('Appartement créé');
+        toast.success(t('success'));
       }
       setIsDialogOpen(false);
       resetForm();
       fetchData();
     } catch (e) {
-      toast.error(e.response?.data?.detail || 'Erreur lors de la sauvegarde');
+      toast.error(e.response?.data?.detail || t('error'));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (appartId) => {
-    if (!window.confirm('Êtes-vous sûr de vouloir supprimer cet appartement ?')) return;
+    if (!window.confirm(t('confirm') + '?')) return;
 
     try {
       await axios.delete(`${API}/appartements/${appartId}`, { withCredentials: true });
-      toast.success('Appartement supprimé');
+      toast.success(t('success'));
       fetchData();
     } catch (e) {
-      toast.error('Erreur lors de la suppression');
+      toast.error(t('error'));
     }
+  };
+
+  const handleExportExcel = () => {
+    window.open(`${API}/export/appartements/excel`, '_blank');
   };
 
   const getStatusBadge = (statut) => {
     const status = APPART_STATUSES.find((s) => s.value === statut);
     return status ? (
-      <Badge className={status.color}>{status.label}</Badge>
+      <Badge className={`${status.color} border`}>{status.label}</Badge>
     ) : (
       <Badge>{statut}</Badge>
     );
@@ -186,24 +193,30 @@ export function Appartements() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-[#1E3A5F]" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6 fade-in" data-testid="appartements-page">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 font-['Outfit']">
-            Appartements
+          <h1 className="text-3xl md:text-4xl font-light tracking-tight text-[#1E3A5F] font-['Outfit']">
+            {t('apartments')}
           </h1>
-          <p className="text-slate-500 mt-1">Gérez vos appartements par résidence</p>
+          <p className="text-slate-500 mt-1">{appartements.length} {t('apartments').toLowerCase()}</p>
         </div>
-        <Button onClick={() => openDialog()} className="bg-blue-600 hover:bg-blue-700" data-testid="add-appart-btn">
-          <Plus className="h-4 w-4 mr-2" />
-          Ajouter un appartement
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExportExcel} data-testid="export-excel">
+            <FileSpreadsheet className="h-4 w-4 me-2" />
+            Excel
+          </Button>
+          <Button onClick={() => openDialog()} className="bg-[#1E3A5F] hover:bg-[#2A4D7C]" data-testid="add-appart-btn">
+            <Plus className="h-4 w-4 me-2" />
+            {t('addApartment')}
+          </Button>
+        </div>
       </div>
 
       {/* Residence Tabs */}
@@ -214,10 +227,10 @@ export function Appartements() {
               <TabsTrigger
                 key={residence.id}
                 value={residence.id}
-                className="data-[state=active]:bg-blue-50 data-[state=active]:text-blue-600"
+                className="data-[state=active]:bg-[#1E3A5F] data-[state=active]:text-white"
                 data-testid={`tab-${residence.nom.toLowerCase().replace(/\s/g, '-')}`}
               >
-                <Building2 className="h-4 w-4 mr-2" />
+                <Building2 className="h-4 w-4 me-2" />
                 {residence.nom}
               </TabsTrigger>
             ))}
@@ -231,8 +244,8 @@ export function Appartements() {
                   <CardContent className="pt-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-emerald-600">Disponibles</p>
-                        <p className="text-2xl font-bold text-emerald-700">
+                        <p className="text-sm text-emerald-600">{t('available')}</p>
+                        <p className="text-2xl font-light text-emerald-700">
                           {filteredAppartements.filter(a => a.statut === 'disponible').length}
                         </p>
                       </div>
@@ -244,8 +257,8 @@ export function Appartements() {
                   <CardContent className="pt-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-amber-600">Réservés</p>
-                        <p className="text-2xl font-bold text-amber-700">
+                        <p className="text-sm text-amber-600">{t('reserved')}</p>
+                        <p className="text-2xl font-light text-amber-700">
                           {filteredAppartements.filter(a => a.statut === 'réservé').length}
                         </p>
                       </div>
@@ -257,8 +270,8 @@ export function Appartements() {
                   <CardContent className="pt-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-slate-600">Vendus</p>
-                        <p className="text-2xl font-bold text-slate-700">
+                        <p className="text-sm text-slate-600">{t('sold')}</p>
+                        <p className="text-2xl font-light text-slate-700">
                           {filteredAppartements.filter(a => a.statut === 'vendu').length}
                         </p>
                       </div>
@@ -272,10 +285,10 @@ export function Appartements() {
               {filteredAppartements.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredAppartements.map((appart) => (
-                    <Card key={appart.id} className="hover:shadow-md transition-shadow" data-testid={`appart-card-${appart.id}`}>
+                    <Card key={appart.id} className="card-luxury" data-testid={`appart-card-${appart.id}`}>
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
-                          <CardTitle className="text-lg font-semibold font-['Outfit']">
+                          <CardTitle className="text-lg font-medium text-[#1E3A5F] font-['Outfit']">
                             {appart.type_appart}
                           </CardTitle>
                           {getStatusBadge(appart.statut)}
@@ -284,23 +297,23 @@ export function Appartements() {
                       <CardContent>
                         <div className="space-y-2 text-sm">
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Prix</span>
-                            <span className="font-medium">{appart.prix?.toLocaleString('fr-FR')} €</span>
+                            <span className="text-slate-500">{t('price')}</span>
+                            <span className="font-medium text-[#1E3A5F]">{appart.prix?.toLocaleString('fr-FR')} DA</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Étage</span>
+                            <span className="text-slate-500">{t('floor')}</span>
                             <span className="font-medium">{appart.etage}</span>
                           </div>
                           {appart.surface && (
                             <div className="flex justify-between">
-                              <span className="text-slate-500">Surface</span>
+                              <span className="text-slate-500">{t('surface')}</span>
                               <span className="font-medium">{appart.surface} m²</span>
                             </div>
                           )}
                           {appart.client_id && (
                             <div className="flex justify-between">
                               <span className="text-slate-500">Client</span>
-                              <span className="font-medium text-blue-600">{getClientName(appart.client_id)}</span>
+                              <span className="font-medium text-[#C41E3A]">{getClientName(appart.client_id)}</span>
                             </div>
                           )}
                         </div>
@@ -313,8 +326,8 @@ export function Appartements() {
                             onClick={() => openDialog(appart)}
                             data-testid={`edit-appart-${appart.id}`}
                           >
-                            <Pencil className="h-3 w-3 mr-1" />
-                            Modifier
+                            <Pencil className="h-3 w-3 me-1" />
+                            {t('edit')}
                           </Button>
                           <Button
                             variant="outline"
@@ -334,10 +347,10 @@ export function Appartements() {
                 <Card className="bg-slate-50">
                   <CardContent className="py-12 text-center text-slate-500">
                     <Building2 className="h-12 w-12 mx-auto mb-4 text-slate-300" />
-                    <p>Aucun appartement dans cette résidence</p>
+                    <p>{t('noApartments')}</p>
                     <Button onClick={() => openDialog()} className="mt-4" variant="outline">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Ajouter un appartement
+                      <Plus className="h-4 w-4 me-2" />
+                      {t('addApartment')}
                     </Button>
                   </CardContent>
                 </Card>
@@ -349,8 +362,7 @@ export function Appartements() {
         <Card className="bg-slate-50">
           <CardContent className="py-12 text-center text-slate-500">
             <Building2 className="h-12 w-12 mx-auto mb-4 text-slate-300" />
-            <p>Aucune résidence configurée</p>
-            <p className="text-sm mt-1">Allez dans Paramètres pour créer des résidences</p>
+            <p>{t('noApartments')}</p>
           </CardContent>
         </Card>
       )}
@@ -359,24 +371,24 @@ export function Appartements() {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-['Outfit']">
-              {editingAppart ? 'Modifier l\'appartement' : 'Ajouter un appartement'}
+            <DialogTitle className="font-['Outfit'] text-[#1E3A5F]">
+              {editingAppart ? t('editApartment') : t('addApartment')}
             </DialogTitle>
             <DialogDescription>
-              {editingAppart ? 'Modifiez les informations de l\'appartement' : 'Remplissez les informations du nouvel appartement'}
+              {editingAppart ? t('edit') : t('create')}
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="residence">Résidence *</Label>
+                <Label htmlFor="residence">{t('residence')} *</Label>
                 <Select
                   value={formData.residence_id}
                   onValueChange={(v) => setFormData({ ...formData, residence_id: v })}
                 >
                   <SelectTrigger data-testid="appart-residence">
-                    <SelectValue placeholder="Sélectionner" />
+                    <SelectValue placeholder={t('none')} />
                   </SelectTrigger>
                   <SelectContent>
                     {residences.map((r) => (
@@ -386,7 +398,7 @@ export function Appartements() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="type">Type *</Label>
+                <Label htmlFor="type">{t('type')} *</Label>
                 <Select
                   value={formData.type_appart}
                   onValueChange={(v) => setFormData({ ...formData, type_appart: v })}
@@ -405,7 +417,7 @@ export function Appartements() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="prix">Prix (€) *</Label>
+                <Label htmlFor="prix">{t('price')} (DA) *</Label>
                 <Input
                   id="prix"
                   type="number"
@@ -416,7 +428,7 @@ export function Appartements() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="etage">Étage *</Label>
+                <Label htmlFor="etage">{t('floor')} *</Label>
                 <Input
                   id="etage"
                   type="number"
@@ -430,7 +442,7 @@ export function Appartements() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="surface">Surface (m²)</Label>
+                <Label htmlFor="surface">{t('surface')} (m²)</Label>
                 <Input
                   id="surface"
                   type="number"
@@ -440,7 +452,7 @@ export function Appartements() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="statut">Statut *</Label>
+                <Label htmlFor="statut">{t('status')} *</Label>
                 <Select
                   value={formData.statut}
                   onValueChange={(v) => setFormData({ ...formData, statut: v })}
@@ -459,16 +471,16 @@ export function Appartements() {
 
             {(formData.statut === 'réservé' || formData.statut === 'vendu') && (
               <div className="space-y-2">
-                <Label htmlFor="client">Client lié</Label>
+                <Label htmlFor="client">Client</Label>
                 <Select
                   value={formData.client_id}
                   onValueChange={(v) => setFormData({ ...formData, client_id: v })}
                 >
                   <SelectTrigger data-testid="appart-client">
-                    <SelectValue placeholder="Sélectionner un client" />
+                    <SelectValue placeholder={t('none')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Aucun</SelectItem>
+                    <SelectItem value="none">{t('none')}</SelectItem>
                     {clients.map((c) => (
                       <SelectItem key={c.id} value={c.id}>{c.nom} - {c.telephone}</SelectItem>
                     ))}
@@ -478,7 +490,7 @@ export function Appartements() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">{t('description')}</Label>
               <Textarea
                 id="description"
                 value={formData.description}
@@ -490,11 +502,11 @@ export function Appartements() {
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                Annuler
+                {t('cancel')}
               </Button>
-              <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={saving} data-testid="save-appart-btn">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                {editingAppart ? 'Enregistrer' : 'Créer'}
+              <Button type="submit" className="bg-[#1E3A5F] hover:bg-[#2A4D7C]" disabled={saving} data-testid="save-appart-btn">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin me-2" /> : null}
+                {t('save')}
               </Button>
             </DialogFooter>
           </form>
