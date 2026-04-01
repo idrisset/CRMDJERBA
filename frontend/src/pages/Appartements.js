@@ -68,11 +68,19 @@ export function Appartements() {
         axios.get(`${API}/clients`, { withCredentials: true }),
       ]);
       setAppartements(appartsRes.data || []);
-      setResidences(residencesRes.data || []);
+      // Sort residences: EDIMCO first, then TAKARIET, then others
+      const sortedResidences = (residencesRes.data || []).sort((a, b) => {
+        if (a.nom.includes('EDIMCO')) return -1;
+        if (b.nom.includes('EDIMCO')) return 1;
+        if (a.nom.includes('TAKARIET')) return -1;
+        if (b.nom.includes('TAKARIET')) return 1;
+        return a.nom.localeCompare(b.nom);
+      });
+      setResidences(sortedResidences);
       setClients(clientsRes.data || []);
       
-      if (!selectedResidence && residencesRes.data && residencesRes.data.length > 0) {
-        setSelectedResidence(residencesRes.data[0].id);
+      if (!selectedResidence && sortedResidences.length > 0) {
+        setSelectedResidence(sortedResidences[0].id);
       }
     } catch (e) {
       console.error('Fetch error:', e);
