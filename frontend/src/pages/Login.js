@@ -8,15 +8,16 @@ import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Loader2 } from 'lucide-react';
 
-// Logo SVG
+// Logo Component - Using original uploaded image (top version with white background)
 const Logo = () => (
-  <svg viewBox="0 0 60 60" className="h-16 w-16" fill="none">
-    <path d="M30 8L8 24V52H24V38H36V52H52V24L30 8Z" fill="#C41E3A" />
-    <path d="M30 8L8 24H18L30 15L42 24H52L30 8Z" fill="#1E3A5F" />
-    <circle cx="30" cy="30" r="4" fill="white" />
-    <path d="M30 34V48" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-    <path d="M26 44H34" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
-  </svg>
+  <div className="h-24 w-32 overflow-hidden bg-white rounded-lg p-2">
+    <img 
+      src="https://customer-assets.emergentagent.com/job_property-hub-612/artifacts/qshujqiw_IMG_1081.jpeg" 
+      alt="DJERBA CONSTRUCTION" 
+      className="h-auto w-full object-cover object-top"
+      style={{ marginTop: '0', height: '120px', objectPosition: 'top' }}
+    />
+  </div>
 );
 
 export function Login() {
@@ -62,9 +63,6 @@ export function Login() {
           <div className="mx-auto mb-4">
             <Logo />
           </div>
-          <CardTitle className="text-2xl font-light tracking-tight text-[#1E3A5F] font-['Outfit']">
-            DJERBA CONSTRUCTION
-          </CardTitle>
           <CardDescription className="text-slate-500">
             {t('login')}
           </CardDescription>

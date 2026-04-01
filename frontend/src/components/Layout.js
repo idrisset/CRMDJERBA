@@ -22,15 +22,16 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 
-// Logo SVG Component
+// Logo Component - Using original uploaded image (cropped to show just icon+text)
 const Logo = () => (
-  <svg viewBox="0 0 40 40" className="h-8 w-8" fill="none">
-    <path d="M20 4L4 16V36H16V26H24V36H36V16L20 4Z" fill="#C41E3A" />
-    <path d="M20 4L4 16H12L20 10L28 16H36L20 4Z" fill="#1E3A5F" />
-    <circle cx="20" cy="20" r="3" fill="white" />
-    <path d="M20 23V32" stroke="white" strokeWidth="2" strokeLinecap="round" />
-    <path d="M17 29H23" stroke="white" strokeWidth="2" strokeLinecap="round" />
-  </svg>
+  <div className="h-12 w-28 overflow-hidden bg-white rounded p-1">
+    <img 
+      src="https://customer-assets.emergentagent.com/job_property-hub-612/artifacts/qshujqiw_IMG_1081.jpeg" 
+      alt="DJERBA CONSTRUCTION" 
+      className="h-auto w-full object-cover object-top"
+      style={{ height: '60px', objectPosition: 'top' }}
+    />
+  </div>
 );
 
 export function Layout({ children }) {
@@ -65,15 +66,9 @@ export function Layout({ children }) {
     <div className="flex min-h-screen bg-[#F8F9FA]">
       {/* Sidebar */}
       <aside className="sidebar-luxury" data-testid="sidebar">
-        <div className="p-6 border-b border-white/10">
-          <div className="flex items-center gap-3">
+        <div className="p-4 border-b border-white/10">
+          <div className="flex items-center justify-center">
             <Logo />
-            <div>
-              <h1 className="text-lg font-bold text-white tracking-tight font-['Outfit']">
-                DJERBA
-              </h1>
-              <p className="text-xs text-slate-400 uppercase tracking-widest">Construction</p>
-            </div>
           </div>
         </div>
 
