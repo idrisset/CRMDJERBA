@@ -323,6 +323,29 @@ export function Clients() {
               <Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="h-9" data-testid="client-email" />
             </div>
 
+            {/* Statut + Situation */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">{t('status')}</Label>
+                <Select value={formData.statut} onValueChange={v => setFormData({...formData, statut: v})}>
+                  <SelectTrigger className="h-9" data-testid="client-statut"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CLIENT_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">{t('situation')}</Label>
+                <Select value={formData.situation_familiale || 'none'} onValueChange={v => setFormData({...formData, situation_familiale: v === 'none' ? '' : v})}>
+                  <SelectTrigger className="h-9" data-testid="client-situation"><SelectValue placeholder="-" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">-</SelectItem>
+                    {SITUATIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             {/* Objectif */}
             <div className="space-y-1">
               <Label className="text-xs">Objectif</Label>
@@ -335,7 +358,7 @@ export function Clients() {
               </Select>
             </div>
 
-            {/* Salaire + Mode paiement + Budget */}
+            {/* Salaire + Mode paiement */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">{t('salary')} (DA)</Label>
@@ -365,40 +388,19 @@ export function Clients() {
               </div>
             </div>
 
-            {/* Etage souhaité + Situation + Statut */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Etage souhaité</Label>
-                <Select value={formData.etage_souhaite || 'none'} onValueChange={v => setFormData({...formData, etage_souhaite: v === 'none' ? '' : v})}>
-                  <SelectTrigger className="h-9" data-testid="client-etage"><SelectValue placeholder="-" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">-</SelectItem>
-                    {ETAGES.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">{t('situation')}</Label>
-                <Select value={formData.situation_familiale || 'none'} onValueChange={v => setFormData({...formData, situation_familiale: v === 'none' ? '' : v})}>
-                  <SelectTrigger className="h-9" data-testid="client-situation"><SelectValue placeholder="-" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">-</SelectItem>
-                    {SITUATIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">{t('status')}</Label>
-                <Select value={formData.statut} onValueChange={v => setFormData({...formData, statut: v})}>
-                  <SelectTrigger className="h-9" data-testid="client-statut"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {CLIENT_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* Etage souhaité */}
+            <div className="space-y-1">
+              <Label className="text-xs">Etage souhaité</Label>
+              <Select value={formData.etage_souhaite || 'none'} onValueChange={v => setFormData({...formData, etage_souhaite: v === 'none' ? '' : v})}>
+                <SelectTrigger className="h-9" data-testid="client-etage"><SelectValue placeholder="-" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">-</SelectItem>
+                  {ETAGES.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
-            {/* Apartment assignment */}
+            {/* Appartement EDIMCO */}
             <div className="space-y-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
               <div className="flex items-center gap-2 mb-2">
                 <Home className="h-4 w-4 text-[#1E3A5F]" />
