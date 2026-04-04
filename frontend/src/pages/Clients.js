@@ -380,11 +380,11 @@ export function Clients() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Budget min (DA)</Label>
-                <Input type="number" value={formData.budget_min} onChange={e => setFormData({...formData, budget_min: e.target.value})} className="h-9" data-testid="client-budget-min" />
+                <Input type="number" step="100000" min="0" value={formData.budget_min} onChange={e => setFormData({...formData, budget_min: e.target.value})} placeholder="ex: 2800000" className="h-9" data-testid="client-budget-min" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Budget max (DA)</Label>
-                <Input type="number" value={formData.budget_max} onChange={e => setFormData({...formData, budget_max: e.target.value})} className="h-9" data-testid="client-budget-max" />
+                <Input type="number" step="100000" min="0" value={formData.budget_max} onChange={e => setFormData({...formData, budget_max: e.target.value})} placeholder="ex: 10000000" className="h-9" data-testid="client-budget-max" />
               </div>
             </div>
 
