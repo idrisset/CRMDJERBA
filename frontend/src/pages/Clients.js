@@ -323,17 +323,23 @@ export function Clients() {
               <Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="h-9" data-testid="client-email" />
             </div>
 
-            {/* Objectif + Mode paiement */}
+            {/* Objectif */}
+            <div className="space-y-1">
+              <Label className="text-xs">Objectif</Label>
+              <Select value={formData.objectif || 'none'} onValueChange={v => setFormData({...formData, objectif: v === 'none' ? '' : v})}>
+                <SelectTrigger className="h-9" data-testid="client-objectif"><SelectValue placeholder="-" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">-</SelectItem>
+                  {OBJECTIFS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Salaire + Mode paiement + Budget */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">Objectif</Label>
-                <Select value={formData.objectif || 'none'} onValueChange={v => setFormData({...formData, objectif: v === 'none' ? '' : v})}>
-                  <SelectTrigger className="h-9" data-testid="client-objectif"><SelectValue placeholder="-" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">-</SelectItem>
-                    {OBJECTIFS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs">{t('salary')} (DA)</Label>
+                <Input type="number" value={formData.salaire} onChange={e => setFormData({...formData, salaire: e.target.value})} className="h-9" data-testid="client-salaire" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Mode de paiement</Label>
@@ -347,12 +353,8 @@ export function Clients() {
               </div>
             </div>
 
-            {/* Salaire + Budget */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">{t('salary')} (DA)</Label>
-                <Input type="number" value={formData.salaire} onChange={e => setFormData({...formData, salaire: e.target.value})} className="h-9" data-testid="client-salaire" />
-              </div>
+            {/* Budget min/max */}
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Budget min (DA)</Label>
                 <Input type="number" value={formData.budget_min} onChange={e => setFormData({...formData, budget_min: e.target.value})} className="h-9" data-testid="client-budget-min" />
