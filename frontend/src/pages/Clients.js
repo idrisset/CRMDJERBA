@@ -21,6 +21,11 @@ import { toast } from 'sonner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+const OBJECTIFS = ['Achat personnel', 'Investissement'];
+const MODES_PAIEMENT = ['Autofinancement', 'Crédit bancaire'];
+const ETAGES = ['Etage 02', 'Etage 03', 'Etage 04', 'Etage 05', 'Etage 06', 'Etage 07', 'Etage 08', 'Etage 09', 'Etage 10', 'Etage 11', 'Duplex 10-11'];
+const SITUATIONS = ['Célibataire', 'Marié(e)', 'Divorcé(e)', 'Veuf/Veuve', 'En couple'];
+
 export function Clients() {
   const [clients, setClients] = useState([]);
   const [appartements, setAppartements] = useState([]);
@@ -41,14 +46,15 @@ export function Clients() {
     { value: 'vendu', label: t('sold'), color: 'bg-slate-200 text-slate-700 border-slate-300' },
   ];
 
-  const SITUATIONS = ['Célibataire', 'Marié(e)', 'Divorcé(e)', 'Veuf/Veuve', 'En couple'];
-
-  const [formData, setFormData] = useState({
-    nom: '', telephone: '', email: '', salaire: '',
+  const emptyForm = {
+    nom: '', telephone: '', telephone2: '', email: '',
+    salaire: '', budget_min: '', budget_max: '',
+    objectif: '', mode_paiement: '', etage_souhaite: '',
     situation_familiale: '', notes: '', statut: 'nouveau',
     appartement_id: '',
-  });
+  };
 
+  const [formData, setFormData] = useState(emptyForm);
   const [appartTypeFilter, setAppartTypeFilter] = useState('Tous');
 
   const fetchData = async () => {
@@ -87,34 +93,28 @@ export function Clients() {
     return types.sort();
   }, [appartements]);
 
-  const getAppartInfo = (appartId) => {
-    if (!appartId) return null;
-    return appartements.find(a => a.id === appartId);
-  };
-
-  const resetForm = () => {
-    setFormData({
-      nom: '', telephone: '', email: '', salaire: '',
-      situation_familiale: '', notes: '', statut: 'nouveau',
-      appartement_id: '',
-    });
-    setEditingClient(null);
-    setAppartTypeFilter('Tous');
-  };
+  const getAppartInfo = (id) => id ? appartements.find(a => a.id === id) : null;
 
   const openDialog = (client = null) => {
     if (client) {
       setEditingClient(client);
       setFormData({
         nom: client.nom || '', telephone: client.telephone || '',
-        email: client.email || '', salaire: client.salaire?.toString() || '',
+        telephone2: client.telephone2 || '', email: client.email || '',
+        salaire: client.salaire?.toString() || '',
+        budget_min: client.budget_min?.toString() || '',
+        budget_max: client.budget_max?.toString() || '',
+        objectif: client.objectif || '', mode_paiement: client.mode_paiement || '',
+        etage_souhaite: client.etage_souhaite || '',
         situation_familiale: client.situation_familiale || '',
         notes: client.notes || '', statut: client.statut || 'nouveau',
         appartement_id: client.appartement_id || '',
       });
     } else {
-      resetForm();
+      setEditingClient(null);
+      setFormData(emptyForm);
     }
+    setAppartTypeFilter('Tous');
     setIsDialogOpen(true);
   };
 
@@ -124,8 +124,14 @@ export function Clients() {
     const payload = {
       ...formData,
       salaire: formData.salaire ? parseFloat(formData.salaire) : null,
+      budget_min: formData.budget_min ? parseFloat(formData.budget_min) : null,
+      budget_max: formData.budget_max ? parseFloat(formData.budget_max) : null,
       appartement_id: formData.appartement_id && formData.appartement_id !== 'none' ? formData.appartement_id : null,
       situation_familiale: formData.situation_familiale && formData.situation_familiale !== 'none' ? formData.situation_familiale : null,
+      objectif: formData.objectif && formData.objectif !== 'none' ? formData.objectif : null,
+      mode_paiement: formData.mode_paiement && formData.mode_paiement !== 'none' ? formData.mode_paiement : null,
+      etage_souhaite: formData.etage_souhaite && formData.etage_souhaite !== 'none' ? formData.etage_souhaite : null,
+      telephone2: formData.telephone2 || null,
     };
     try {
       if (editingClient) {
@@ -135,20 +141,18 @@ export function Clients() {
       }
       toast.success(t('success'));
       setIsDialogOpen(false);
-      resetForm();
       fetchData();
     } catch (e) {
-      const msg = e.response?.data?.detail || t('error');
-      toast.error(msg);
+      toast.error(e.response?.data?.detail || t('error'));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async (clientId) => {
+  const handleDelete = async (id) => {
     if (!window.confirm(t('confirm') + '?')) return;
     try {
-      await axios.delete(`${API}/clients/${clientId}`, { withCredentials: true });
+      await axios.delete(`${API}/clients/${id}`, { withCredentials: true });
       toast.success(t('success'));
       fetchData();
     } catch (e) {
@@ -158,15 +162,17 @@ export function Clients() {
 
   const filteredClients = clients.filter((c) => {
     const matchSearch = c.nom?.toLowerCase().includes(search.toLowerCase()) ||
-      c.telephone?.includes(search) || c.email?.toLowerCase().includes(search.toLowerCase());
+      c.telephone?.includes(search) || c.telephone2?.includes(search) || c.email?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'all' || c.statut === statusFilter;
     return matchSearch && matchStatus;
   });
 
   const getStatusBadge = (s) => {
     const st = CLIENT_STATUSES.find(x => x.value === s);
-    return st ? <Badge className={`${st.color} border`}>{st.label}</Badge> : <Badge>{s}</Badge>;
+    return st ? <Badge className={`${st.color} border text-xs`}>{st.label}</Badge> : <Badge className="text-xs">{s}</Badge>;
   };
+
+  const formatDA = (v) => v ? new Intl.NumberFormat('fr-FR').format(v) + ' DA' : '';
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-[#1E3A5F]" /></div>;
 
@@ -214,10 +220,11 @@ export function Clients() {
             <TableRow className="bg-[#1E3A5F]">
               <TableHead className="text-white text-xs font-medium">{t('name')}</TableHead>
               <TableHead className="text-white text-xs font-medium">{t('phone')}</TableHead>
+              <TableHead className="text-white text-xs font-medium">Objectif</TableHead>
+              <TableHead className="text-white text-xs font-medium">Paiement</TableHead>
               <TableHead className="text-white text-xs font-medium">{t('status')}</TableHead>
               <TableHead className="text-white text-xs font-medium">{t('apartment')}</TableHead>
-              <TableHead className="text-white text-xs font-medium">Source</TableHead>
-              <TableHead className="text-white text-xs font-medium w-[80px]"></TableHead>
+              <TableHead className="text-white text-xs font-medium w-[70px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -225,29 +232,40 @@ export function Clients() {
               const appart = getAppartInfo(client.appartement_id);
               return (
                 <TableRow key={client.id} className="hover:bg-slate-50" data-testid={`client-row-${client.id}`}>
-                  <TableCell className="font-medium text-sm">{client.nom}</TableCell>
-                  <TableCell className="text-sm">{client.telephone}</TableCell>
+                  <TableCell>
+                    <div>
+                      <span className="font-medium text-sm">{client.nom}</span>
+                      {client.objectif && (
+                        <span className="text-xs text-slate-400 ms-1.5">({client.objectif})</span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-sm">{client.telephone}</div>
+                    {client.telephone2 && <div className="text-xs text-slate-400">{client.telephone2}</div>}
+                  </TableCell>
+                  <TableCell>
+                    {client.objectif ? (
+                      <Badge className={`text-xs border ${client.objectif === 'Investissement' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                        {client.objectif === 'Investissement' ? 'Invest.' : 'Achat'}
+                      </Badge>
+                    ) : <span className="text-slate-300 text-xs">-</span>}
+                  </TableCell>
+                  <TableCell>
+                    {client.mode_paiement ? (
+                      <span className="text-xs text-slate-600">{client.mode_paiement === 'Crédit bancaire' ? 'Crédit' : 'Auto.'}</span>
+                    ) : <span className="text-slate-300 text-xs">-</span>}
+                  </TableCell>
                   <TableCell>{getStatusBadge(client.statut)}</TableCell>
                   <TableCell>
                     {appart ? (
-                      <div className="flex items-center gap-1.5">
-                        <Home className="h-3.5 w-3.5 text-[#1E3A5F]" />
+                      <div className="flex items-center gap-1">
+                        <Home className="h-3 w-3 text-[#1E3A5F]" />
                         <span className="text-xs font-medium text-[#1E3A5F]">
-                          Lot {appart.numero_lot} - Bloc {appart.bloc} - {appart.type_appart}
+                          Lot {appart.numero_lot} - {appart.bloc} - {appart.type_appart}
                         </span>
                       </div>
-                    ) : (
-                      <span className="text-xs text-slate-300">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {client.source === 'whatsapp' ? (
-                      <Badge className="bg-green-100 text-green-800 border border-green-200 text-xs">
-                        <MessageSquare className="h-3 w-3 me-1" /> WhatsApp
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-xs">Manuel</Badge>
-                    )}
+                    ) : <span className="text-slate-300 text-xs">-</span>}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-0.5">
@@ -263,7 +281,7 @@ export function Clients() {
               );
             }) : (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-10 text-slate-400">{t('noClients')}</TableCell>
+                <TableCell colSpan={7} className="text-center py-10 text-slate-400">{t('noClients')}</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -281,23 +299,92 @@ export function Clients() {
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-3">
+            {/* Nom */}
+            <div className="space-y-1">
+              <Label className="text-xs">{t('name')} *</Label>
+              <Input value={formData.nom} onChange={e => setFormData({...formData, nom: e.target.value})} required className="h-9" data-testid="client-nom" />
+            </div>
+
+            {/* Telephones */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">{t('name')} *</Label>
-                <Input value={formData.nom} onChange={e => setFormData({...formData, nom: e.target.value})} required className="h-9" data-testid="client-nom" />
+                <Label className="text-xs">{t('phone')} 1 *</Label>
+                <Input value={formData.telephone} onChange={e => setFormData({...formData, telephone: e.target.value})} required className="h-9" data-testid="client-telephone" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">{t('phone')} *</Label>
-                <Input value={formData.telephone} onChange={e => setFormData({...formData, telephone: e.target.value})} required className="h-9" data-testid="client-telephone" />
+                <Label className="text-xs">{t('phone')} 2</Label>
+                <Input value={formData.telephone2} onChange={e => setFormData({...formData, telephone2: e.target.value})} className="h-9" placeholder="Optionnel" data-testid="client-telephone2" />
               </div>
             </div>
 
+            {/* Email */}
             <div className="space-y-1">
               <Label className="text-xs">{t('email')}</Label>
               <Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="h-9" data-testid="client-email" />
             </div>
 
+            {/* Objectif + Mode paiement */}
             <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Objectif</Label>
+                <Select value={formData.objectif || 'none'} onValueChange={v => setFormData({...formData, objectif: v === 'none' ? '' : v})}>
+                  <SelectTrigger className="h-9" data-testid="client-objectif"><SelectValue placeholder="-" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">-</SelectItem>
+                    {OBJECTIFS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Mode de paiement</Label>
+                <Select value={formData.mode_paiement || 'none'} onValueChange={v => setFormData({...formData, mode_paiement: v === 'none' ? '' : v})}>
+                  <SelectTrigger className="h-9" data-testid="client-paiement"><SelectValue placeholder="-" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">-</SelectItem>
+                    {MODES_PAIEMENT.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Salaire + Budget */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">{t('salary')} (DA)</Label>
+                <Input type="number" value={formData.salaire} onChange={e => setFormData({...formData, salaire: e.target.value})} className="h-9" data-testid="client-salaire" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Budget min (DA)</Label>
+                <Input type="number" value={formData.budget_min} onChange={e => setFormData({...formData, budget_min: e.target.value})} className="h-9" data-testid="client-budget-min" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Budget max (DA)</Label>
+                <Input type="number" value={formData.budget_max} onChange={e => setFormData({...formData, budget_max: e.target.value})} className="h-9" data-testid="client-budget-max" />
+              </div>
+            </div>
+
+            {/* Etage souhaité + Situation + Statut */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Etage souhaité</Label>
+                <Select value={formData.etage_souhaite || 'none'} onValueChange={v => setFormData({...formData, etage_souhaite: v === 'none' ? '' : v})}>
+                  <SelectTrigger className="h-9" data-testid="client-etage"><SelectValue placeholder="-" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">-</SelectItem>
+                    {ETAGES.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">{t('situation')}</Label>
+                <Select value={formData.situation_familiale || 'none'} onValueChange={v => setFormData({...formData, situation_familiale: v === 'none' ? '' : v})}>
+                  <SelectTrigger className="h-9" data-testid="client-situation"><SelectValue placeholder="-" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">-</SelectItem>
+                    {SITUATIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-1">
                 <Label className="text-xs">{t('status')}</Label>
                 <Select value={formData.statut} onValueChange={v => setFormData({...formData, statut: v})}>
@@ -307,21 +394,6 @@ export function Clients() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">{t('salary')} (DA)</Label>
-                <Input type="number" value={formData.salaire} onChange={e => setFormData({...formData, salaire: e.target.value})} className="h-9" data-testid="client-salaire" />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">{t('situation')}</Label>
-              <Select value={formData.situation_familiale} onValueChange={v => setFormData({...formData, situation_familiale: v})}>
-                <SelectTrigger className="h-9" data-testid="client-situation"><SelectValue placeholder={t('none')} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">{t('none')}</SelectItem>
-                  {SITUATIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
             </div>
 
             {/* Apartment assignment */}
@@ -365,6 +437,7 @@ export function Clients() {
               })()}
             </div>
 
+            {/* Notes */}
             <div className="space-y-1">
               <Label className="text-xs">{t('notes')}</Label>
               <Textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} rows={2} className="text-sm" data-testid="client-notes" />

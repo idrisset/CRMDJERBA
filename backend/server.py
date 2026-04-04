@@ -107,23 +107,33 @@ class UserRegister(BaseModel):
 class ClientCreate(BaseModel):
     nom: str
     telephone: str
+    telephone2: Optional[str] = None
     email: Optional[str] = None
     salaire: Optional[float] = None
+    budget_min: Optional[float] = None
+    budget_max: Optional[float] = None
+    objectif: Optional[str] = None
+    mode_paiement: Optional[str] = None
+    etage_souhaite: Optional[str] = None
     situation_familiale: Optional[str] = None
     notes: Optional[str] = None
     statut: str = "nouveau"
-    temperature: str = "froid"
     appartement_id: Optional[str] = None
 
 class ClientUpdate(BaseModel):
     nom: Optional[str] = None
     telephone: Optional[str] = None
+    telephone2: Optional[str] = None
     email: Optional[str] = None
     salaire: Optional[float] = None
+    budget_min: Optional[float] = None
+    budget_max: Optional[float] = None
+    objectif: Optional[str] = None
+    mode_paiement: Optional[str] = None
+    etage_souhaite: Optional[str] = None
     situation_familiale: Optional[str] = None
     notes: Optional[str] = None
     statut: Optional[str] = None
-    temperature: Optional[str] = None
     appartement_id: Optional[str] = None
 
 class ResidenceCreate(BaseModel):
@@ -383,12 +393,17 @@ async def get_clients(current_user: dict = Depends(get_current_user)):
             "id": str(c["_id"]),
             "nom": c.get("nom", ""),
             "telephone": c.get("telephone", ""),
+            "telephone2": c.get("telephone2", ""),
             "email": c.get("email", ""),
             "salaire": c.get("salaire"),
+            "budget_min": c.get("budget_min"),
+            "budget_max": c.get("budget_max"),
+            "objectif": c.get("objectif", ""),
+            "mode_paiement": c.get("mode_paiement", ""),
+            "etage_souhaite": c.get("etage_souhaite", ""),
             "situation_familiale": c.get("situation_familiale", ""),
             "notes": c.get("notes", ""),
             "statut": c.get("statut", "nouveau"),
-            "temperature": c.get("temperature", "froid"),
             "appartement_id": c.get("appartement_id"),
             "source": c.get("source", "manual"),
             "created_at": c.get("created_at", ""),
@@ -1058,7 +1073,7 @@ async def export_clients_excel(current_user: dict = Depends(get_current_user)):
     ws.title = "Clients"
     
     # Headers
-    headers = ["Nom", "Téléphone", "Email", "Salaire", "Situation", "Statut", "Température", "Source", "Date création"]
+    headers = ["Nom", "Téléphone 1", "Téléphone 2", "Email", "Objectif", "Mode Paiement", "Salaire", "Budget Min", "Budget Max", "Etage Souhaité", "Situation", "Statut", "Source", "Date création"]
     ws.append(headers)
     
     # Data
@@ -1066,11 +1081,16 @@ async def export_clients_excel(current_user: dict = Depends(get_current_user)):
         ws.append([
             c.get("nom", ""),
             c.get("telephone", ""),
+            c.get("telephone2", ""),
             c.get("email", ""),
+            c.get("objectif", ""),
+            c.get("mode_paiement", ""),
             c.get("salaire", ""),
+            c.get("budget_min", ""),
+            c.get("budget_max", ""),
+            c.get("etage_souhaite", ""),
             c.get("situation_familiale", ""),
             c.get("statut", ""),
-            c.get("temperature", ""),
             c.get("source", "manual"),
             c.get("created_at", "")
         ])
