@@ -4,7 +4,7 @@ import { useWebSocket } from '../contexts/WebSocketContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Users, Building2, Calendar, TrendingUp, MessageSquare, Flame, Clock } from 'lucide-react';
+import { Users, Building2, Calendar, TrendingUp, MessageSquare, Clock } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -78,13 +78,6 @@ export function Dashboard() {
       bg: 'bg-slate-100'
     },
     {
-      title: t('hotLeads'),
-      value: stats?.clients_par_temperature?.chaud || 0,
-      icon: Flame,
-      color: 'text-[#C41E3A]',
-      bg: 'bg-red-50'
-    },
-    {
       title: t('whatsappLeads'),
       value: stats?.whatsapp_leads || 0,
       icon: MessageSquare,
@@ -101,12 +94,6 @@ export function Dashboard() {
     { key: 'vendu', label: t('sold'), color: 'bg-slate-200 text-slate-700 border-slate-300' }
   ];
 
-  const temperatures = [
-    { key: 'chaud', label: t('hot'), color: 'bg-red-100 text-red-800 border-red-200', icon: '🔥' },
-    { key: 'tiède', label: t('warm'), color: 'bg-amber-100 text-amber-800 border-amber-200', icon: '🌡️' },
-    { key: 'froid', label: t('cold'), color: 'bg-slate-100 text-slate-700 border-slate-200', icon: '❄️' }
-  ];
-
   return (
     <div className="space-y-6 fade-in" data-testid="dashboard">
       <div>
@@ -117,7 +104,7 @@ export function Dashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 stagger-fade-in">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 stagger-fade-in">
         {statCards.map((stat) => (
           <Card key={stat.title} className="card-luxury" data-testid={`stat-${stat.title.toLowerCase().replace(/\s/g, '-')}`}>
             <CardContent className="pt-6">
@@ -175,7 +162,7 @@ export function Dashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Clients par statut */}
         <Card className="card-luxury" data-testid="clients-by-status">
           <CardHeader>
@@ -188,31 +175,6 @@ export function Dashboard() {
                   <Badge className={`${status.color} border`}>{status.label}</Badge>
                   <span className="text-xl font-light text-slate-900">
                     {stats?.clients_par_statut?.[status.key] || 0}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Température des leads */}
-        <Card className="card-luxury" data-testid="clients-by-temperature">
-          <CardHeader>
-            <CardTitle className="text-lg font-medium text-[#1E3A5F] font-['Outfit'] flex items-center gap-2">
-              <Flame className="h-5 w-5" />
-              {t('temperature')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {temperatures.map((temp) => (
-                <div key={temp.key} className="flex items-center justify-between p-3 rounded bg-slate-50">
-                  <div className="flex items-center gap-2">
-                    <span>{temp.icon}</span>
-                    <Badge className={`${temp.color} border`}>{temp.label}</Badge>
-                  </div>
-                  <span className="text-xl font-light text-slate-900">
-                    {stats?.clients_par_temperature?.[temp.key] || 0}
                   </span>
                 </div>
               ))}
@@ -241,16 +203,14 @@ export function Dashboard() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <Badge className={
-                        client.temperature === 'chaud' ? 'bg-red-100 text-red-800 border border-red-200' :
-                        client.temperature === 'tiède' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
-                        'bg-slate-100 text-slate-700 border border-slate-200'
-                      }>
-                        {client.temperature === 'chaud' ? t('hot') : 
-                         client.temperature === 'tiède' ? t('warm') : t('cold')}
-                      </Badge>
-                    </div>
+                    <Badge className={
+                      client.statut === 'réservé' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                      client.statut === 'vendu' ? 'bg-slate-200 text-slate-700 border border-slate-300' :
+                      client.statut === 'intéressé' ? 'bg-violet-100 text-violet-800 border border-violet-200' :
+                      'bg-blue-100 text-blue-800 border border-blue-200'
+                    }>
+                      {client.statut}
+                    </Badge>
                   </div>
                 ))}
               </div>

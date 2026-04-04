@@ -27,7 +27,6 @@ export function Clients() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [tempFilter, setTempFilter] = useState('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -42,21 +41,14 @@ export function Clients() {
     { value: 'vendu', label: t('sold'), color: 'bg-slate-200 text-slate-700 border-slate-300' },
   ];
 
-  const TEMPERATURES = [
-    { value: 'chaud', label: t('hot'), color: 'bg-red-100 text-red-800 border-red-200' },
-    { value: 'tiède', label: t('warm'), color: 'bg-amber-100 text-amber-800 border-amber-200' },
-    { value: 'froid', label: t('cold'), color: 'bg-slate-100 text-slate-700 border-slate-200' },
-  ];
-
   const SITUATIONS = ['Célibataire', 'Marié(e)', 'Divorcé(e)', 'Veuf/Veuve', 'En couple'];
 
   const [formData, setFormData] = useState({
     nom: '', telephone: '', email: '', salaire: '',
     situation_familiale: '', notes: '', statut: 'nouveau',
-    temperature: 'froid', appartement_id: '',
+    appartement_id: '',
   });
 
-  // For apartment picker
   const [appartTypeFilter, setAppartTypeFilter] = useState('Tous');
 
   const fetchData = async () => {
@@ -79,7 +71,6 @@ export function Clients() {
     if (lastMessage?.type?.includes('client') || lastMessage?.type?.includes('appartement') || lastMessage?.type === 'new_lead') fetchData();
   }, [lastMessage]);
 
-  // Available apartments for selection (only available or currently assigned to this client)
   const availableApparts = useMemo(() => {
     let apparts = appartements.filter(a =>
       a.destination === 'Logement' &&
@@ -105,7 +96,7 @@ export function Clients() {
     setFormData({
       nom: '', telephone: '', email: '', salaire: '',
       situation_familiale: '', notes: '', statut: 'nouveau',
-      temperature: 'froid', appartement_id: '',
+      appartement_id: '',
     });
     setEditingClient(null);
     setAppartTypeFilter('Tous');
@@ -119,7 +110,6 @@ export function Clients() {
         email: client.email || '', salaire: client.salaire?.toString() || '',
         situation_familiale: client.situation_familiale || '',
         notes: client.notes || '', statut: client.statut || 'nouveau',
-        temperature: client.temperature || 'froid',
         appartement_id: client.appartement_id || '',
       });
     } else {
@@ -170,18 +160,12 @@ export function Clients() {
     const matchSearch = c.nom?.toLowerCase().includes(search.toLowerCase()) ||
       c.telephone?.includes(search) || c.email?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'all' || c.statut === statusFilter;
-    const matchTemp = tempFilter === 'all' || c.temperature === tempFilter;
-    return matchSearch && matchStatus && matchTemp;
+    return matchSearch && matchStatus;
   });
 
   const getStatusBadge = (s) => {
     const st = CLIENT_STATUSES.find(x => x.value === s);
     return st ? <Badge className={`${st.color} border`}>{st.label}</Badge> : <Badge>{s}</Badge>;
-  };
-
-  const getTempBadge = (temp) => {
-    const t = TEMPERATURES.find(x => x.value === temp);
-    return t ? <Badge className={`${t.color} border`}>{t.label}</Badge> : <Badge>{temp}</Badge>;
   };
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-[#1E3A5F]" /></div>;
@@ -221,13 +205,6 @@ export function Clients() {
             {CLIENT_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={tempFilter} onValueChange={setTempFilter}>
-          <SelectTrigger className="w-40" data-testid="filter-temp"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('allStatuses')}</SelectItem>
-            {TEMPERATURES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
       </div>
 
       {/* Table */}
@@ -238,7 +215,6 @@ export function Clients() {
               <TableHead className="text-white text-xs font-medium">{t('name')}</TableHead>
               <TableHead className="text-white text-xs font-medium">{t('phone')}</TableHead>
               <TableHead className="text-white text-xs font-medium">{t('status')}</TableHead>
-              <TableHead className="text-white text-xs font-medium">{t('temperature')}</TableHead>
               <TableHead className="text-white text-xs font-medium">{t('apartment')}</TableHead>
               <TableHead className="text-white text-xs font-medium">Source</TableHead>
               <TableHead className="text-white text-xs font-medium w-[80px]"></TableHead>
@@ -252,7 +228,6 @@ export function Clients() {
                   <TableCell className="font-medium text-sm">{client.nom}</TableCell>
                   <TableCell className="text-sm">{client.telephone}</TableCell>
                   <TableCell>{getStatusBadge(client.statut)}</TableCell>
-                  <TableCell>{getTempBadge(client.temperature)}</TableCell>
                   <TableCell>
                     {appart ? (
                       <div className="flex items-center gap-1.5">
@@ -288,7 +263,7 @@ export function Clients() {
               );
             }) : (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-10 text-slate-400">{t('noClients')}</TableCell>
+                <TableCell colSpan={6} className="text-center py-10 text-slate-400">{t('noClients')}</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -333,53 +308,35 @@ export function Clients() {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">{t('temperature')}</Label>
-                <Select value={formData.temperature} onValueChange={v => setFormData({...formData, temperature: v})}>
-                  <SelectTrigger className="h-9" data-testid="client-temperature"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {TEMPERATURES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
                 <Label className="text-xs">{t('salary')} (DA)</Label>
                 <Input type="number" value={formData.salaire} onChange={e => setFormData({...formData, salaire: e.target.value})} className="h-9" data-testid="client-salaire" />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">{t('situation')}</Label>
-                <Select value={formData.situation_familiale} onValueChange={v => setFormData({...formData, situation_familiale: v})}>
-                  <SelectTrigger className="h-9" data-testid="client-situation"><SelectValue placeholder={t('none')} /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">{t('none')}</SelectItem>
-                    {SITUATIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
 
-            {/* Apartment assignment section */}
+            <div className="space-y-1">
+              <Label className="text-xs">{t('situation')}</Label>
+              <Select value={formData.situation_familiale} onValueChange={v => setFormData({...formData, situation_familiale: v})}>
+                <SelectTrigger className="h-9" data-testid="client-situation"><SelectValue placeholder={t('none')} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t('none')}</SelectItem>
+                  {SITUATIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Apartment assignment */}
             <div className="space-y-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
               <div className="flex items-center gap-2 mb-2">
                 <Home className="h-4 w-4 text-[#1E3A5F]" />
                 <Label className="text-xs font-semibold text-[#1E3A5F]">Appartement EDIMCO</Label>
               </div>
               
-              {/* Type filter for apartments */}
               <div className="flex gap-1 mb-2 flex-wrap">
                 {['Tous', ...appartTypes].map(tp => (
-                  <button
-                    type="button"
-                    key={tp}
-                    onClick={() => setAppartTypeFilter(tp)}
+                  <button type="button" key={tp} onClick={() => setAppartTypeFilter(tp)}
                     className={`px-2 py-0.5 text-xs rounded transition-colors ${
                       appartTypeFilter === tp ? 'bg-[#1E3A5F] text-white' : 'bg-white text-slate-500 border border-slate-200'
-                    }`}
-                  >
-                    {tp}
-                  </button>
+                    }`}>{tp}</button>
                 ))}
               </div>
 
@@ -389,7 +346,7 @@ export function Clients() {
                   <SelectItem value="none">Aucun appartement</SelectItem>
                   {availableApparts.map(a => (
                     <SelectItem key={a.id} value={a.id}>
-                      Lot {a.numero_lot} | Bloc {a.bloc} | {a.type_appart} | {a.etage} | {a.surface_habitable?.toFixed(0)}m² | {new Intl.NumberFormat('fr-FR').format(a.prix)} DA
+                      Lot {a.numero_lot} | Bloc {a.bloc} | {a.type_appart} | {a.etage} | {a.surface_habitable?.toFixed(0)}m2 | {new Intl.NumberFormat('fr-FR').format(a.prix)} DA
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -402,7 +359,7 @@ export function Clients() {
                   <div className="mt-2 p-2 rounded bg-[#1E3A5F]/5 border border-[#1E3A5F]/20 text-xs">
                     <span className="font-bold text-[#1E3A5F]">Lot {sel.numero_lot}</span> - Bloc {sel.bloc} - {sel.type_appart} - {sel.etage}
                     <br />
-                    <span className="text-slate-500">{sel.surface_habitable?.toFixed(2)}m² hab. | {new Intl.NumberFormat('fr-FR').format(sel.prix)} DA</span>
+                    <span className="text-slate-500">{sel.surface_habitable?.toFixed(2)}m2 hab. | {new Intl.NumberFormat('fr-FR').format(sel.prix)} DA</span>
                   </div>
                 );
               })()}
