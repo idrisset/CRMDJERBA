@@ -1,94 +1,73 @@
-# DJERBA CONSTRUCTION - CRM Immobilier PRD
+# DJERBA CONSTRUCTION - CRM EDIMCO
 
-## Original Problem Statement
-Système CRM automatisé complet pour entreprise immobilière en Algérie avec:
-- Gestion clients avec température (chaud/tiède/froid) et statut pipeline
-- Gestion appartements par résidence
-- WhatsApp Business API avec IA GPT-5.2 automatique
-- Notifications email aux commerciaux
-- Export PDF/Excel
-- Interface multilingue (FR/AR/EN) avec RTL
-- Design luxe adapté au marché algérien
+## Problème Original
+CRM interne pour une entreprise immobilière en Algérie (DJERBA CONSTRUCTION) pour gérer les clients et les appartements du projet EDIMCO (Résidence DJERBA).
 
-## Brand Identity
-- **Nom**: DJERBA CONSTRUCTION
-- **Couleurs**: Navy Blue (#1E3A5F), Red (#C41E3A), White
-- **Numéro WhatsApp**: +213 770 481 500
+## Architecture
+- **Frontend**: React + Tailwind CSS + Shadcn UI
+- **Backend**: FastAPI (Python)
+- **Database**: MongoDB
+- **Auth**: JWT via localStorage (compatible iPad/Safari)
+- **Design**: Luxury (Navy Blue #1E3A5F / Red #C41E3A / White)
+- **i18n**: FR, EN, AR (RTL)
+- **Temps réel**: WebSockets
 
-## User Personas
-1. **Admin** - Gère résidences, utilisateurs, notifications, configuration
-2. **Commercial** - Gère clients, appartements, répond aux leads
+## Fonctionnalités Implémentées
 
-## What's Been Implemented (2026-03-31)
+### Phase 1 - Core (DONE)
+- [x] Authentification JWT (localStorage)
+- [x] Gestion des clients (CRUD, statuts, température)
+- [x] Gestion des résidences
+- [x] Gestion des appartements (CRUD avec filtres)
+- [x] Tableau de bord avec stats
+- [x] Synchronisation temps réel (WebSockets)
+- [x] Interface multilingue (FR/EN/AR + RTL)
+- [x] Design luxe avec logo personnalisé
 
-### Backend (FastAPI + MongoDB)
-- ✅ Auth JWT avec cookies httpOnly
-- ✅ CRUD Clients avec température (chaud/tiède/froid) et source (manual/whatsapp)
-- ✅ CRUD Appartements avec liaison client
-- ✅ CRUD Résidences (admin only)
-- ✅ Dashboard API avec KPIs complets
-- ✅ WebSocket pour sync temps réel
-- ✅ Meta WhatsApp Business API webhook (vérifié, prêt pour production)
-- ✅ IA WhatsApp avec GPT-5.2 (emergentintegrations)
-- ✅ Auto-création leads depuis WhatsApp
-- ✅ Notifications email (Resend) aux commerciaux
-- ✅ Export Excel (openpyxl)
-- ✅ Export PDF (reportlab)
-- ✅ Admin seeding automatique
+### Phase 2 - EDIMCO Data (DONE - 04/04/2026)
+- [x] Extraction des données de 9 PDFs techniques
+- [x] Peuplement de la base: 298 lots (264 logements + 8 commerces + 25 services + 1 parking + 1 crèche)
+- [x] 8 bâtiments (A-H), R+11, Duplex 10e-11e étage
+- [x] Prix calculé: 90,000 DA/m² TTC
+- [x] Interface tableau avec filtres (bloc, type, destination, recherche par lot)
+- [x] Pagination (30 lots/page)
+- [x] Stats par bloc sur le tableau de bord
+- [x] Export Excel mis à jour
 
-### Frontend (React + Shadcn UI + Tailwind)
-- ✅ Design luxe Navy/Red/White
-- ✅ Multilingue FR/AR/EN avec RTL
-- ✅ Logo SVG DJERBA CONSTRUCTION
-- ✅ Page Login/Register avec background gradient
-- ✅ Dashboard avec tous les KPIs (leads chauds, WhatsApp leads)
-- ✅ Page Clients avec température, filtres, export
-- ✅ Page Appartements avec tabs par résidence
-- ✅ Page WhatsApp avec test chat et historique
-- ✅ Page Paramètres (notifications email, résidences, utilisateurs)
-- ✅ Layout avec sidebar Navy, indicateur WebSocket
-- ✅ Language switcher dans header
+### Phase 3 - Intégrations (EN COURS)
+- [x] Code WhatsApp Meta Business API (webhook + IA GPT-5.2)
+- [x] Code Resend email notifications
+- [ ] Test end-to-end WhatsApp (requiert clés Meta)
+- [ ] Test end-to-end Resend (requiert clé Resend)
 
-## Configuration Required (Production)
-```env
-WHATSAPP_PHONE_NUMBER_ID=<from Meta Developer Console>
-META_ACCESS_TOKEN=<from Meta Developer Console>
-META_APP_SECRET=<for webhook signature verification>
-RESEND_API_KEY=<from Resend dashboard>
-SENDER_EMAIL=notifications@djerba-construction.com
-```
+## Données EDIMCO
+| Bloc | Logements | Types |
+|------|-----------|-------|
+| A | 28 | F2, F3, F4, F4 Duplex |
+| B | 28 | F2, F3, F4, F4 Duplex |
+| C | 48 | F3, F4, F2, F5 Duplex |
+| D | 28 | F2, F3, F4, F4 Duplex |
+| E | 28 | F2, F3, F4, F4 Duplex |
+| F | 48 | F3, F2, F4, F5 Duplex |
+| G | 28 | F2, F3, F4, F4 Duplex |
+| H | 28 | F2, F3, F4, F4 Duplex |
+| **Total** | **264** | |
++ 8 commerces + 25 services + 1 parking (location) + 1 crèche
 
-## Webhook URL for Meta
-`https://property-hub-612.preview.emergentagent.com/api/whatsapp/webhook`
-Verify Token: `djerba_construction_whatsapp_verify_2024`
+## Backlog
+- P0: Attendre les fichiers supplémentaires de l'utilisateur (plans bâtiments A-F détaillés)
+- P1: Vérification WhatsApp Meta webhook end-to-end
+- P2: Vérification exports PDF/Excel
+- P3: Refactoring server.py si nécessaire
 
-## Prioritized Backlog
+## Intégrations Tierces
+- Meta WhatsApp Business Cloud API (requiert clé utilisateur)
+- Resend (requiert clé utilisateur)
+- OpenAI GPT-5.2 via Emergent LLM Key (pour IA WhatsApp)
 
-### P0 (Done)
-- [x] Auth système complet
-- [x] CRUD Clients avec température
-- [x] CRUD Appartements
-- [x] Dashboard KPIs
-- [x] WebSocket sync
-- [x] IA WhatsApp GPT-5.2
-- [x] Multilingue FR/AR/EN + RTL
-- [x] Export PDF/Excel
-- [x] Design luxe DJERBA
-
-### P1 (Production Ready)
-- [ ] Configurer Meta Business WhatsApp tokens
-- [ ] Configurer Resend API key
-- [ ] Ajouter domaine email personnalisé
-
-### P2 (Future)
-- [ ] Rapports de performance commerciale
-- [ ] Historique des modifications
-- [ ] Mode sombre
-- [ ] App mobile
-
-## Tech Stack
-- Backend: FastAPI, MongoDB, JWT, bcrypt, WebSocket, Resend
-- Frontend: React 19, Shadcn UI, Tailwind CSS, Axios
-- AI: OpenAI GPT-5.2 via emergentintegrations
-- WhatsApp: Meta Business Cloud API
-- Email: Resend
+## Schéma DB
+- `users`: {email, hashed_password, role, name}
+- `clients`: {nom, telephone, email, salaire, situation_familiale, notes, statut, temperature, source}
+- `residences`: {nom, adresse, description}
+- `appartements`: {residence_id, numero_lot, bloc, type_appart, prix, etage, statut, surface, surface_habitable, surface_utile, description, destination, client_id}
+- `chatmessages`: {client_id, direction, content, timestamp}
