@@ -112,7 +112,8 @@ class ClientCreate(BaseModel):
     situation_familiale: Optional[str] = None
     notes: Optional[str] = None
     statut: str = "nouveau"
-    temperature: str = "froid"  # chaud, tiède, froid
+    temperature: str = "froid"
+    appartement_id: Optional[str] = None
 
 class ClientUpdate(BaseModel):
     nom: Optional[str] = None
@@ -398,17 +399,43 @@ async def get_clients(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/clients")
 async def create_client(client: ClientCreate, current_user: dict = Depends(get_current_user)):
+    client_data = client.model_dump()
+    appartement_id = client_data.pop("appartement_id", None)
+    
     client_doc = {
-        **client.model_dump(),
+        **client_data,
+        "appartement_id": appartement_id,
         "source": "manual",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": current_user["_id"]
     }
     result = await db.clients.insert_one(client_doc)
+    client_id = str(result.inserted_id)
     
-    await manager.broadcast({"type": "client_created", "data": {"id": str(result.inserted_id)}})
+    # If apartment assigned, block it
+    if appartement_id:
+        appart = await db.appartements.find_one({"_id": ObjectId(appartement_id)})
+        if appart and appart.get("statut") == "disponible":
+            await db.appartements.update_one(
+                {"_id": ObjectId(appartement_id)},
+                {"$set": {"statut": "réservé", "client_id": client_id}}
+            )
+            # Log reservation history
+            await db.reservations.insert_one({
+                "client_id": client_id,
+                "client_nom": client_data.get("nom", ""),
+                "appartement_id": appartement_id,
+                "bloc": appart.get("bloc", ""),
+                "numero_lot": appart.get("numero_lot", ""),
+                "type_appart": appart.get("type_appart", ""),
+                "action": "réservé",
+                "agent": current_user.get("name", current_user.get("email", "")),
+                "date": datetime.now(timezone.utc).isoformat()
+            })
+            await manager.broadcast({"type": "appartement_updated", "data": {"id": appartement_id}})
     
-    return {"id": str(result.inserted_id), **client.model_dump()}
+    await manager.broadcast({"type": "client_created", "data": {"id": client_id}})
+    return {"id": client_id, **client_data}
 
 @api_router.put("/clients/{client_id}")
 async def update_client(client_id: str, client: ClientUpdate, current_user: dict = Depends(get_current_user)):
@@ -419,32 +446,101 @@ async def update_client(client_id: str, client: ClientUpdate, current_user: dict
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     update_data["updated_by"] = current_user["_id"]
     
-    if client.statut == "réservé" and client.appartement_id:
+    # Get existing client to check old apartment
+    existing = await db.clients.find_one({"_id": ObjectId(client_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Client non trouvé")
+    
+    old_appart_id = existing.get("appartement_id")
+    new_appart_id = client.appartement_id
+    
+    # If apartment changed, handle reservation logic
+    if new_appart_id is not None and new_appart_id != old_appart_id:
+        # Release old apartment
+        if old_appart_id:
+            await db.appartements.update_one(
+                {"_id": ObjectId(old_appart_id)},
+                {"$set": {"statut": "disponible", "client_id": None}}
+            )
+            await db.reservations.insert_one({
+                "client_id": client_id,
+                "client_nom": existing.get("nom", ""),
+                "appartement_id": old_appart_id,
+                "action": "libéré",
+                "agent": current_user.get("name", current_user.get("email", "")),
+                "date": datetime.now(timezone.utc).isoformat()
+            })
+            await manager.broadcast({"type": "appartement_updated", "data": {"id": old_appart_id}})
+        
+        # Block new apartment
+        if new_appart_id and new_appart_id != "none":
+            appart = await db.appartements.find_one({"_id": ObjectId(new_appart_id)})
+            if appart:
+                # Check if already taken by someone else
+                if appart.get("statut") != "disponible" and appart.get("client_id") and appart.get("client_id") != client_id:
+                    raise HTTPException(status_code=409, detail=f"Lot {appart.get('numero_lot')} déjà réservé par un autre client")
+                
+                await db.appartements.update_one(
+                    {"_id": ObjectId(new_appart_id)},
+                    {"$set": {"statut": "réservé", "client_id": client_id}}
+                )
+                await db.reservations.insert_one({
+                    "client_id": client_id,
+                    "client_nom": update_data.get("nom", existing.get("nom", "")),
+                    "appartement_id": new_appart_id,
+                    "bloc": appart.get("bloc", ""),
+                    "numero_lot": appart.get("numero_lot", ""),
+                    "type_appart": appart.get("type_appart", ""),
+                    "action": "réservé",
+                    "agent": current_user.get("name", current_user.get("email", "")),
+                    "date": datetime.now(timezone.utc).isoformat()
+                })
+                # Auto-set client status to réservé
+                update_data["statut"] = "réservé"
+                await manager.broadcast({"type": "appartement_updated", "data": {"id": new_appart_id}})
+        else:
+            # Removing apartment assignment
+            update_data["appartement_id"] = None
+    elif client.statut == "vendu" and old_appart_id:
+        # Mark apartment as sold
         await db.appartements.update_one(
-            {"_id": ObjectId(client.appartement_id)},
-            {"$set": {"statut": "réservé", "client_id": client_id}}
+            {"_id": ObjectId(old_appart_id)},
+            {"$set": {"statut": "vendu"}}
         )
+        await db.reservations.insert_one({
+            "client_id": client_id,
+            "client_nom": update_data.get("nom", existing.get("nom", "")),
+            "appartement_id": old_appart_id,
+            "action": "vendu",
+            "agent": current_user.get("name", current_user.get("email", "")),
+            "date": datetime.now(timezone.utc).isoformat()
+        })
+        await manager.broadcast({"type": "appartement_updated", "data": {"id": old_appart_id}})
     
     result = await db.clients.update_one(
         {"_id": ObjectId(client_id)},
         {"$set": update_data}
     )
     
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Client non trouvé")
-    
     await manager.broadcast({"type": "client_updated", "data": {"id": client_id}})
-    
     return {"id": client_id, **update_data}
 
 @api_router.delete("/clients/{client_id}")
 async def delete_client(client_id: str, current_user: dict = Depends(get_current_user)):
+    # Release any apartment assigned to this client
+    existing = await db.clients.find_one({"_id": ObjectId(client_id)})
+    if existing and existing.get("appartement_id"):
+        await db.appartements.update_one(
+            {"_id": ObjectId(existing["appartement_id"])},
+            {"$set": {"statut": "disponible", "client_id": None}}
+        )
+        await manager.broadcast({"type": "appartement_updated", "data": {"id": existing["appartement_id"]}})
+    
     result = await db.clients.delete_one({"_id": ObjectId(client_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Client non trouvé")
     
     await manager.broadcast({"type": "client_deleted", "data": {"id": client_id}})
-    
     return {"message": "Client supprimé"}
 
 # ============ RESIDENCES ROUTES ============
@@ -509,6 +605,8 @@ async def delete_residence(residence_id: str, current_user: dict = Depends(get_c
     
     return {"message": "Résidence supprimée"}
 
+# ============ DASHBOARD ROUTES ============
+
 # ============ APPARTEMENTS ROUTES ============
 @api_router.get("/appartements")
 async def get_appartements(current_user: dict = Depends(get_current_user)):
@@ -551,22 +649,61 @@ async def update_appartement(appart_id: str, appart: AppartementUpdate, current_
     if not update_data:
         raise HTTPException(status_code=400, detail="Aucune donnée à mettre à jour")
     
-    if appart.statut == "réservé" and appart.client_id:
+    existing = await db.appartements.find_one({"_id": ObjectId(appart_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Appartement non trouvé")
+    
+    old_client_id = existing.get("client_id")
+    new_client_id = appart.client_id
+    
+    # Assigning a client to apartment
+    if new_client_id and new_client_id != "none" and new_client_id != old_client_id:
         await db.clients.update_one(
-            {"_id": ObjectId(appart.client_id)},
+            {"_id": ObjectId(new_client_id)},
             {"$set": {"appartement_id": appart_id, "statut": "réservé"}}
         )
+        update_data["statut"] = update_data.get("statut", "réservé")
+        await db.reservations.insert_one({
+            "client_id": new_client_id,
+            "appartement_id": appart_id,
+            "bloc": existing.get("bloc", ""),
+            "numero_lot": existing.get("numero_lot", ""),
+            "type_appart": existing.get("type_appart", ""),
+            "action": update_data.get("statut", "réservé"),
+            "agent": current_user.get("name", current_user.get("email", "")),
+            "date": datetime.now(timezone.utc).isoformat()
+        })
+        # Release old client if different
+        if old_client_id and old_client_id != new_client_id:
+            await db.clients.update_one(
+                {"_id": ObjectId(old_client_id)},
+                {"$set": {"appartement_id": None}}
+            )
+        await manager.broadcast({"type": "client_updated", "data": {"id": new_client_id}})
+    elif appart.statut == "disponible" and old_client_id:
+        # Releasing apartment
+        await db.clients.update_one(
+            {"_id": ObjectId(old_client_id)},
+            {"$set": {"appartement_id": None}}
+        )
+        update_data["client_id"] = None
+        await db.reservations.insert_one({
+            "client_id": old_client_id,
+            "appartement_id": appart_id,
+            "bloc": existing.get("bloc", ""),
+            "numero_lot": existing.get("numero_lot", ""),
+            "action": "libéré",
+            "agent": current_user.get("name", current_user.get("email", "")),
+            "date": datetime.now(timezone.utc).isoformat()
+        })
+        await manager.broadcast({"type": "client_updated", "data": {"id": old_client_id}})
     
     result = await db.appartements.update_one(
         {"_id": ObjectId(appart_id)},
         {"$set": update_data}
     )
     
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Appartement non trouvé")
-    
     await manager.broadcast({"type": "appartement_updated", "data": {"id": appart_id}})
-    
     return {"id": appart_id, **update_data}
 
 @api_router.delete("/appartements/{appart_id}")
@@ -579,7 +716,24 @@ async def delete_appartement(appart_id: str, current_user: dict = Depends(get_cu
     
     return {"message": "Appartement supprimé"}
 
-# ============ DASHBOARD ROUTES ============
+# ============ RESERVATIONS HISTORY ============
+@api_router.get("/reservations")
+async def get_reservations(current_user: dict = Depends(get_current_user)):
+    result = []
+    async for r in db.reservations.find({}).sort("date", -1).limit(100):
+        result.append({
+            "id": str(r["_id"]),
+            "client_id": r.get("client_id", ""),
+            "client_nom": r.get("client_nom", ""),
+            "appartement_id": r.get("appartement_id", ""),
+            "bloc": r.get("bloc", ""),
+            "numero_lot": r.get("numero_lot", ""),
+            "type_appart": r.get("type_appart", ""),
+            "action": r.get("action", ""),
+            "agent": r.get("agent", ""),
+            "date": r.get("date", "")
+        })
+    return result
 @api_router.get("/dashboard")
 async def get_dashboard(current_user: dict = Depends(get_current_user)):
     total_clients = await db.clients.count_documents({})

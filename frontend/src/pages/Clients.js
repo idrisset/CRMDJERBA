@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -7,30 +7,16 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../components/ui/table';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../components/ui/dialog';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
 import { Textarea } from '../components/ui/textarea';
-import { Plus, Pencil, Trash2, Search, Loader2, Download, FileSpreadsheet, FileText, MessageSquare, Flame, Thermometer } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Loader2, FileSpreadsheet, FileText, MessageSquare, Home } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -57,76 +43,82 @@ export function Clients() {
   ];
 
   const TEMPERATURES = [
-    { value: 'chaud', label: t('hot'), color: 'bg-red-100 text-red-800 border-red-200', icon: '🔥' },
-    { value: 'tiède', label: t('warm'), color: 'bg-amber-100 text-amber-800 border-amber-200', icon: '🌡️' },
-    { value: 'froid', label: t('cold'), color: 'bg-slate-100 text-slate-700 border-slate-200', icon: '❄️' },
+    { value: 'chaud', label: t('hot'), color: 'bg-red-100 text-red-800 border-red-200' },
+    { value: 'tiède', label: t('warm'), color: 'bg-amber-100 text-amber-800 border-amber-200' },
+    { value: 'froid', label: t('cold'), color: 'bg-slate-100 text-slate-700 border-slate-200' },
   ];
 
   const SITUATIONS = ['Célibataire', 'Marié(e)', 'Divorcé(e)', 'Veuf/Veuve', 'En couple'];
 
   const [formData, setFormData] = useState({
-    nom: '',
-    telephone: '',
-    email: '',
-    salaire: '',
-    situation_familiale: '',
-    notes: '',
-    statut: 'nouveau',
-    temperature: 'froid',
-    appartement_id: '',
+    nom: '', telephone: '', email: '', salaire: '',
+    situation_familiale: '', notes: '', statut: 'nouveau',
+    temperature: 'froid', appartement_id: '',
   });
+
+  // For apartment picker
+  const [appartTypeFilter, setAppartTypeFilter] = useState('Tous');
 
   const fetchData = async () => {
     try {
-      const [clientsRes, appartsRes] = await Promise.all([
+      const [c, a] = await Promise.all([
         axios.get(`${API}/clients`, { withCredentials: true }),
         axios.get(`${API}/appartements`, { withCredentials: true }),
       ]);
-      setClients(clientsRes.data);
-      setAppartements(appartsRes.data);
+      setClients(c.data || []);
+      setAppartements(a.data || []);
     } catch (e) {
-      toast.error(t('error'));
+      if (e.response?.status !== 401) toast.error(t('error'));
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => { fetchData(); }, []);
   useEffect(() => {
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    if (lastMessage?.type?.includes('client') || lastMessage?.type?.includes('appartement') || lastMessage?.type === 'new_lead') {
-      fetchData();
-    }
+    if (lastMessage?.type?.includes('client') || lastMessage?.type?.includes('appartement') || lastMessage?.type === 'new_lead') fetchData();
   }, [lastMessage]);
+
+  // Available apartments for selection (only available or currently assigned to this client)
+  const availableApparts = useMemo(() => {
+    let apparts = appartements.filter(a =>
+      a.destination === 'Logement' &&
+      (a.statut === 'disponible' || a.id === formData.appartement_id)
+    );
+    if (appartTypeFilter !== 'Tous') {
+      apparts = apparts.filter(a => a.type_appart === appartTypeFilter);
+    }
+    return apparts.sort((a, b) => parseInt(a.numero_lot || 0) - parseInt(b.numero_lot || 0));
+  }, [appartements, formData.appartement_id, appartTypeFilter]);
+
+  const appartTypes = useMemo(() => {
+    const types = [...new Set(appartements.filter(a => a.destination === 'Logement').map(a => a.type_appart))];
+    return types.sort();
+  }, [appartements]);
+
+  const getAppartInfo = (appartId) => {
+    if (!appartId) return null;
+    return appartements.find(a => a.id === appartId);
+  };
 
   const resetForm = () => {
     setFormData({
-      nom: '',
-      telephone: '',
-      email: '',
-      salaire: '',
-      situation_familiale: '',
-      notes: '',
-      statut: 'nouveau',
-      temperature: 'froid',
-      appartement_id: '',
+      nom: '', telephone: '', email: '', salaire: '',
+      situation_familiale: '', notes: '', statut: 'nouveau',
+      temperature: 'froid', appartement_id: '',
     });
     setEditingClient(null);
+    setAppartTypeFilter('Tous');
   };
 
   const openDialog = (client = null) => {
     if (client) {
       setEditingClient(client);
       setFormData({
-        nom: client.nom || '',
-        telephone: client.telephone || '',
-        email: client.email || '',
-        salaire: client.salaire?.toString() || '',
+        nom: client.nom || '', telephone: client.telephone || '',
+        email: client.email || '', salaire: client.salaire?.toString() || '',
         situation_familiale: client.situation_familiale || '',
-        notes: client.notes || '',
-        statut: client.statut || 'nouveau',
+        notes: client.notes || '', statut: client.statut || 'nouveau',
         temperature: client.temperature || 'froid',
         appartement_id: client.appartement_id || '',
       });
@@ -139,27 +131,25 @@ export function Clients() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-
     const payload = {
       ...formData,
       salaire: formData.salaire ? parseFloat(formData.salaire) : null,
       appartement_id: formData.appartement_id && formData.appartement_id !== 'none' ? formData.appartement_id : null,
       situation_familiale: formData.situation_familiale && formData.situation_familiale !== 'none' ? formData.situation_familiale : null,
     };
-
     try {
       if (editingClient) {
         await axios.put(`${API}/clients/${editingClient.id}`, payload, { withCredentials: true });
-        toast.success(t('success'));
       } else {
         await axios.post(`${API}/clients`, payload, { withCredentials: true });
-        toast.success(t('success'));
       }
+      toast.success(t('success'));
       setIsDialogOpen(false);
       resetForm();
       fetchData();
     } catch (e) {
-      toast.error(e.response?.data?.detail || t('error'));
+      const msg = e.response?.data?.detail || t('error');
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -167,7 +157,6 @@ export function Clients() {
 
   const handleDelete = async (clientId) => {
     if (!window.confirm(t('confirm') + '?')) return;
-
     try {
       await axios.delete(`${API}/clients/${clientId}`, { withCredentials: true });
       toast.success(t('success'));
@@ -177,178 +166,129 @@ export function Clients() {
     }
   };
 
-  const handleExportExcel = () => {
-    window.open(`${API}/export/clients/excel`, '_blank');
-  };
-
-  const handleExportPDF = () => {
-    window.open(`${API}/export/clients/pdf`, '_blank');
-  };
-
-  const filteredClients = clients.filter((client) => {
-    const matchesSearch =
-      client.nom?.toLowerCase().includes(search.toLowerCase()) ||
-      client.telephone?.includes(search) ||
-      client.email?.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || client.statut === statusFilter;
-    const matchesTemp = tempFilter === 'all' || client.temperature === tempFilter;
-    return matchesSearch && matchesStatus && matchesTemp;
+  const filteredClients = clients.filter((c) => {
+    const matchSearch = c.nom?.toLowerCase().includes(search.toLowerCase()) ||
+      c.telephone?.includes(search) || c.email?.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter === 'all' || c.statut === statusFilter;
+    const matchTemp = tempFilter === 'all' || c.temperature === tempFilter;
+    return matchSearch && matchStatus && matchTemp;
   });
 
-  const getStatusBadge = (statut) => {
-    const status = CLIENT_STATUSES.find((s) => s.value === statut);
-    return status ? (
-      <Badge className={`${status.color} border`}>{status.label}</Badge>
-    ) : (
-      <Badge>{statut}</Badge>
-    );
+  const getStatusBadge = (s) => {
+    const st = CLIENT_STATUSES.find(x => x.value === s);
+    return st ? <Badge className={`${st.color} border`}>{st.label}</Badge> : <Badge>{s}</Badge>;
   };
 
   const getTempBadge = (temp) => {
-    const temperature = TEMPERATURES.find((t) => t.value === temp);
-    return temperature ? (
-      <Badge className={`${temperature.color} border`}>
-        {temperature.icon} {temperature.label}
-      </Badge>
-    ) : (
-      <Badge>{temp}</Badge>
-    );
+    const t = TEMPERATURES.find(x => x.value === temp);
+    return t ? <Badge className={`${t.color} border`}>{t.label}</Badge> : <Badge>{temp}</Badge>;
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-[#1E3A5F]" />
-      </div>
-    );
-  }
+  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-[#1E3A5F]" /></div>;
 
   return (
-    <div className="space-y-6 fade-in" data-testid="clients-page">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="space-y-5 fade-in" data-testid="clients-page">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl md:text-4xl font-light tracking-tight text-[#1E3A5F] font-['Outfit']">
-            {t('clients')}
+          <h1 className="text-2xl md:text-3xl font-light tracking-tight text-[#1E3A5F] font-['Outfit']">
+            EDIMCO - {t('clients')}
           </h1>
           <p className="text-slate-500 mt-1">{clients.length} {t('clients').toLowerCase()}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleExportExcel} data-testid="export-excel">
-            <FileSpreadsheet className="h-4 w-4 me-2" />
-            Excel
+          <Button variant="outline" size="sm" onClick={() => window.open(`${API}/export/clients/excel`, '_blank')} data-testid="export-excel">
+            <FileSpreadsheet className="h-4 w-4 me-1" /> Excel
           </Button>
-          <Button variant="outline" onClick={handleExportPDF} data-testid="export-pdf">
-            <FileText className="h-4 w-4 me-2" />
-            PDF
+          <Button variant="outline" size="sm" onClick={() => window.open(`${API}/export/clients/pdf`, '_blank')} data-testid="export-pdf">
+            <FileText className="h-4 w-4 me-1" /> PDF
           </Button>
-          <Button onClick={() => openDialog()} className="bg-[#1E3A5F] hover:bg-[#2A4D7C]" data-testid="add-client-btn">
-            <Plus className="h-4 w-4 me-2" />
-            {t('addClient')}
+          <Button size="sm" onClick={() => openDialog()} className="bg-[#1E3A5F] hover:bg-[#2A4D7C]" data-testid="add-client-btn">
+            <Plus className="h-4 w-4 me-1" /> {t('addClient')}
           </Button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="flex gap-4 items-center flex-wrap">
+      <div className="flex gap-3 items-center flex-wrap">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input
-            placeholder={t('search')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="ps-10"
-            data-testid="search-clients"
-          />
+          <Input placeholder={t('search')} value={search} onChange={e => setSearch(e.target.value)} className="ps-10" data-testid="search-clients" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-48" data-testid="filter-status">
-            <SelectValue placeholder={t('filterByStatus')} />
-          </SelectTrigger>
+          <SelectTrigger className="w-40" data-testid="filter-status"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t('allStatuses')}</SelectItem>
-            {CLIENT_STATUSES.map((status) => (
-              <SelectItem key={status.value} value={status.value}>
-                {status.label}
-              </SelectItem>
-            ))}
+            {CLIENT_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={tempFilter} onValueChange={setTempFilter}>
-          <SelectTrigger className="w-48" data-testid="filter-temp">
-            <SelectValue placeholder={t('temperature')} />
-          </SelectTrigger>
+          <SelectTrigger className="w-40" data-testid="filter-temp"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t('allStatuses')}</SelectItem>
-            {TEMPERATURES.map((temp) => (
-              <SelectItem key={temp.value} value={temp.value}>
-                {temp.icon} {temp.label}
-              </SelectItem>
-            ))}
+            {TEMPERATURES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded border border-slate-200">
-        <Table className="table-luxury">
+      <div className="bg-white rounded border border-slate-200 overflow-x-auto">
+        <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>{t('name')}</TableHead>
-              <TableHead>{t('phone')}</TableHead>
-              <TableHead>{t('email')}</TableHead>
-              <TableHead>{t('status')}</TableHead>
-              <TableHead>{t('temperature')}</TableHead>
-              <TableHead>Source</TableHead>
-              <TableHead className="text-end">{t('actions')}</TableHead>
+            <TableRow className="bg-[#1E3A5F]">
+              <TableHead className="text-white text-xs font-medium">{t('name')}</TableHead>
+              <TableHead className="text-white text-xs font-medium">{t('phone')}</TableHead>
+              <TableHead className="text-white text-xs font-medium">{t('status')}</TableHead>
+              <TableHead className="text-white text-xs font-medium">{t('temperature')}</TableHead>
+              <TableHead className="text-white text-xs font-medium">{t('apartment')}</TableHead>
+              <TableHead className="text-white text-xs font-medium">Source</TableHead>
+              <TableHead className="text-white text-xs font-medium w-[80px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredClients.length > 0 ? (
-              filteredClients.map((client) => (
-                <TableRow key={client.id} data-testid={`client-row-${client.id}`}>
-                  <TableCell className="font-medium">{client.nom}</TableCell>
-                  <TableCell>{client.telephone}</TableCell>
-                  <TableCell>{client.email || '-'}</TableCell>
+            {filteredClients.length > 0 ? filteredClients.map(client => {
+              const appart = getAppartInfo(client.appartement_id);
+              return (
+                <TableRow key={client.id} className="hover:bg-slate-50" data-testid={`client-row-${client.id}`}>
+                  <TableCell className="font-medium text-sm">{client.nom}</TableCell>
+                  <TableCell className="text-sm">{client.telephone}</TableCell>
                   <TableCell>{getStatusBadge(client.statut)}</TableCell>
                   <TableCell>{getTempBadge(client.temperature)}</TableCell>
                   <TableCell>
-                    {client.source === 'whatsapp' ? (
-                      <Badge className="bg-green-100 text-green-800 border border-green-200">
-                        <MessageSquare className="h-3 w-3 me-1" />
-                        WhatsApp
-                      </Badge>
+                    {appart ? (
+                      <div className="flex items-center gap-1.5">
+                        <Home className="h-3.5 w-3.5 text-[#1E3A5F]" />
+                        <span className="text-xs font-medium text-[#1E3A5F]">
+                          Lot {appart.numero_lot} - Bloc {appart.bloc} - {appart.type_appart}
+                        </span>
+                      </div>
                     ) : (
-                      <Badge variant="outline">Manual</Badge>
+                      <span className="text-xs text-slate-300">-</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-end">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openDialog(client)}
-                        data-testid={`edit-client-${client.id}`}
-                      >
-                        <Pencil className="h-4 w-4" />
+                  <TableCell>
+                    {client.source === 'whatsapp' ? (
+                      <Badge className="bg-green-100 text-green-800 border border-green-200 text-xs">
+                        <MessageSquare className="h-3 w-3 me-1" /> WhatsApp
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-xs">Manuel</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-0.5">
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openDialog(client)} data-testid={`edit-client-${client.id}`}>
+                        <Pencil className="h-3 w-3 text-slate-500" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-red-500 hover:text-red-700"
-                        onClick={() => handleDelete(client.id)}
-                        data-testid={`delete-client-${client.id}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDelete(client.id)} data-testid={`delete-client-${client.id}`}>
+                        <Trash2 className="h-3 w-3 text-red-400" />
                       </Button>
                     </div>
                   </TableCell>
                 </TableRow>
-              ))
-            ) : (
+              );
+            }) : (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-slate-500">
-                  {t('noClients')}
-                </TableCell>
+                <TableCell colSpan={7} className="text-center py-10 text-slate-400">{t('noClients')}</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -357,154 +297,126 @@ export function Clients() {
 
       {/* Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-['Outfit'] text-[#1E3A5F]">
               {editingClient ? t('editClient') : t('addClient')}
             </DialogTitle>
-            <DialogDescription>
-              {editingClient ? t('edit') : t('create')}
-            </DialogDescription>
+            <DialogDescription>{editingClient ? t('edit') : t('create')}</DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="nom">{t('name')} *</Label>
-                <Input
-                  id="nom"
-                  value={formData.nom}
-                  onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                  required
-                  data-testid="client-nom"
-                />
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">{t('name')} *</Label>
+                <Input value={formData.nom} onChange={e => setFormData({...formData, nom: e.target.value})} required className="h-9" data-testid="client-nom" />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="telephone">{t('phone')} *</Label>
-                <Input
-                  id="telephone"
-                  value={formData.telephone}
-                  onChange={(e) => setFormData({ ...formData, telephone: e.target.value })}
-                  required
-                  data-testid="client-telephone"
-                />
+              <div className="space-y-1">
+                <Label className="text-xs">{t('phone')} *</Label>
+                <Input value={formData.telephone} onChange={e => setFormData({...formData, telephone: e.target.value})} required className="h-9" data-testid="client-telephone" />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="email">{t('email')}</Label>
-              <Input
-                id="email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                data-testid="client-email"
-              />
+            <div className="space-y-1">
+              <Label className="text-xs">{t('email')}</Label>
+              <Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="h-9" data-testid="client-email" />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="statut">{t('status')} *</Label>
-                <Select
-                  value={formData.statut}
-                  onValueChange={(v) => setFormData({ ...formData, statut: v })}
-                >
-                  <SelectTrigger data-testid="client-statut">
-                    <SelectValue />
-                  </SelectTrigger>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">{t('status')}</Label>
+                <Select value={formData.statut} onValueChange={v => setFormData({...formData, statut: v})}>
+                  <SelectTrigger className="h-9" data-testid="client-statut"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {CLIENT_STATUSES.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                    ))}
+                    {CLIENT_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="temperature">{t('temperature')} *</Label>
-                <Select
-                  value={formData.temperature}
-                  onValueChange={(v) => setFormData({ ...formData, temperature: v })}
-                >
-                  <SelectTrigger data-testid="client-temperature">
-                    <SelectValue />
-                  </SelectTrigger>
+              <div className="space-y-1">
+                <Label className="text-xs">{t('temperature')}</Label>
+                <Select value={formData.temperature} onValueChange={v => setFormData({...formData, temperature: v})}>
+                  <SelectTrigger className="h-9" data-testid="client-temperature"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {TEMPERATURES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>{t.icon} {t.label}</SelectItem>
-                    ))}
+                    {TEMPERATURES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="salaire">{t('salary')} (DA)</Label>
-                <Input
-                  id="salaire"
-                  type="number"
-                  value={formData.salaire}
-                  onChange={(e) => setFormData({ ...formData, salaire: e.target.value })}
-                  data-testid="client-salaire"
-                />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">{t('salary')} (DA)</Label>
+                <Input type="number" value={formData.salaire} onChange={e => setFormData({...formData, salaire: e.target.value})} className="h-9" data-testid="client-salaire" />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="situation">{t('situation')}</Label>
-                <Select
-                  value={formData.situation_familiale}
-                  onValueChange={(v) => setFormData({ ...formData, situation_familiale: v })}
-                >
-                  <SelectTrigger data-testid="client-situation">
-                    <SelectValue placeholder={t('none')} />
-                  </SelectTrigger>
+              <div className="space-y-1">
+                <Label className="text-xs">{t('situation')}</Label>
+                <Select value={formData.situation_familiale} onValueChange={v => setFormData({...formData, situation_familiale: v})}>
+                  <SelectTrigger className="h-9" data-testid="client-situation"><SelectValue placeholder={t('none')} /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">{t('none')}</SelectItem>
-                    {SITUATIONS.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
+                    {SITUATIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="appartement">{t('apartment')}</Label>
-              <Select
-                value={formData.appartement_id}
-                onValueChange={(v) => setFormData({ ...formData, appartement_id: v })}
-              >
-                <SelectTrigger data-testid="client-appartement">
-                  <SelectValue placeholder={t('none')} />
-                </SelectTrigger>
+            {/* Apartment assignment section */}
+            <div className="space-y-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
+              <div className="flex items-center gap-2 mb-2">
+                <Home className="h-4 w-4 text-[#1E3A5F]" />
+                <Label className="text-xs font-semibold text-[#1E3A5F]">Appartement EDIMCO</Label>
+              </div>
+              
+              {/* Type filter for apartments */}
+              <div className="flex gap-1 mb-2 flex-wrap">
+                {['Tous', ...appartTypes].map(tp => (
+                  <button
+                    type="button"
+                    key={tp}
+                    onClick={() => setAppartTypeFilter(tp)}
+                    className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                      appartTypeFilter === tp ? 'bg-[#1E3A5F] text-white' : 'bg-white text-slate-500 border border-slate-200'
+                    }`}
+                  >
+                    {tp}
+                  </button>
+                ))}
+              </div>
+
+              <Select value={formData.appartement_id || 'none'} onValueChange={v => setFormData({...formData, appartement_id: v === 'none' ? '' : v})}>
+                <SelectTrigger className="h-9 bg-white" data-testid="client-appartement"><SelectValue placeholder="Aucun" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">{t('none')}</SelectItem>
-                  {appartements.filter(a => a.statut === 'disponible' || a.id === formData.appartement_id).map((a) => (
+                  <SelectItem value="none">Aucun appartement</SelectItem>
+                  {availableApparts.map(a => (
                     <SelectItem key={a.id} value={a.id}>
-                      {a.type_appart} - {t('floor')} {a.etage} ({a.prix?.toLocaleString('fr-FR')} DA)
+                      Lot {a.numero_lot} | Bloc {a.bloc} | {a.type_appart} | {a.etage} | {a.surface_habitable?.toFixed(0)}m² | {new Intl.NumberFormat('fr-FR').format(a.prix)} DA
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+
+              {formData.appartement_id && formData.appartement_id !== 'none' && (() => {
+                const sel = appartements.find(a => a.id === formData.appartement_id);
+                if (!sel) return null;
+                return (
+                  <div className="mt-2 p-2 rounded bg-[#1E3A5F]/5 border border-[#1E3A5F]/20 text-xs">
+                    <span className="font-bold text-[#1E3A5F]">Lot {sel.numero_lot}</span> - Bloc {sel.bloc} - {sel.type_appart} - {sel.etage}
+                    <br />
+                    <span className="text-slate-500">{sel.surface_habitable?.toFixed(2)}m² hab. | {new Intl.NumberFormat('fr-FR').format(sel.prix)} DA</span>
+                  </div>
+                );
+              })()}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="notes">{t('notes')}</Label>
-              <Textarea
-                id="notes"
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                rows={3}
-                data-testid="client-notes"
-              />
+            <div className="space-y-1">
+              <Label className="text-xs">{t('notes')}</Label>
+              <Textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} rows={2} className="text-sm" data-testid="client-notes" />
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                {t('cancel')}
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>{t('cancel')}</Button>
               <Button type="submit" className="bg-[#1E3A5F] hover:bg-[#2A4D7C]" disabled={saving} data-testid="save-client-btn">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin me-2" /> : null}
-                {t('save')}
+                {saving && <Loader2 className="h-4 w-4 animate-spin me-2" />}{t('save')}
               </Button>
             </DialogFooter>
           </form>

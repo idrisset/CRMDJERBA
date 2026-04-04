@@ -4,20 +4,25 @@ import { useWebSocket } from '../contexts/WebSocketContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Users, Building2, Calendar, TrendingUp, MessageSquare, Flame, Thermometer } from 'lucide-react';
+import { Users, Building2, Calendar, TrendingUp, MessageSquare, Flame, Clock } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export function Dashboard() {
   const [stats, setStats] = useState(null);
+  const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const { lastMessage } = useWebSocket();
   const { t } = useLanguage();
 
   const fetchStats = async () => {
     try {
-      const { data } = await axios.get(`${API}/dashboard`, { withCredentials: true });
-      setStats(data);
+      const [statsRes, reservRes] = await Promise.all([
+        axios.get(`${API}/dashboard`, { withCredentials: true }),
+        axios.get(`${API}/reservations`, { withCredentials: true }),
+      ]);
+      setStats(statsRes.data);
+      setReservations(reservRes.data || []);
     } catch (e) {
       console.error('Error fetching stats:', e);
     } finally {
@@ -103,10 +108,10 @@ export function Dashboard() {
   ];
 
   return (
-    <div className="space-y-8 fade-in" data-testid="dashboard">
+    <div className="space-y-6 fade-in" data-testid="dashboard">
       <div>
-        <h1 className="text-3xl md:text-4xl font-light tracking-tight text-[#1E3A5F] font-['Outfit']">
-          {t('dashboard')}
+        <h1 className="text-2xl md:text-3xl font-light tracking-tight text-[#1E3A5F] font-['Outfit']">
+          EDIMCO - {t('dashboard')}
         </h1>
         <p className="text-slate-500 mt-1">{t('overview')}</p>
       </div>
@@ -194,7 +199,7 @@ export function Dashboard() {
         <Card className="card-luxury" data-testid="clients-by-temperature">
           <CardHeader>
             <CardTitle className="text-lg font-medium text-[#1E3A5F] font-['Outfit'] flex items-center gap-2">
-              <Thermometer className="h-5 w-5" />
+              <Flame className="h-5 w-5" />
               {t('temperature')}
             </CardTitle>
           </CardHeader>
@@ -255,6 +260,45 @@ export function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Historique des réservations */}
+      {reservations.length > 0 && (
+        <Card className="card-luxury" data-testid="recent-reservations">
+          <CardHeader>
+            <CardTitle className="text-lg font-medium text-[#1E3A5F] font-['Outfit'] flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Historique des réservations
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {reservations.slice(0, 10).map((r) => (
+                <div key={r.id} className="flex items-center justify-between p-2.5 rounded bg-slate-50 border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <Badge className={
+                      r.action === 'réservé' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                      r.action === 'vendu' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                      'bg-slate-100 text-slate-600 border border-slate-200'
+                    }>
+                      {r.action}
+                    </Badge>
+                    <div>
+                      <span className="text-sm font-medium">{r.client_nom || 'Client'}</span>
+                      <span className="text-xs text-slate-400 mx-2">→</span>
+                      <span className="text-xs font-mono text-[#1E3A5F] font-bold">Lot {r.numero_lot}</span>
+                      <span className="text-xs text-slate-500"> Bloc {r.bloc} - {r.type_appart}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-slate-400">{r.agent}</p>
+                    <p className="text-xs text-slate-400">{new Date(r.date).toLocaleDateString('fr-FR')} {new Date(r.date).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'})}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* WhatsApp AI Status */}
       <Card className="card-luxury border-s-4 border-s-green-500" data-testid="whatsapp-status">
