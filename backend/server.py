@@ -139,19 +139,29 @@ class AppartementCreate(BaseModel):
     residence_id: str
     type_appart: str
     prix: float
-    etage: int
+    etage: str = ""
     statut: str = "disponible"
     surface: Optional[float] = None
+    surface_habitable: Optional[float] = None
+    surface_utile: Optional[float] = None
     description: Optional[str] = None
+    bloc: Optional[str] = None
+    numero_lot: Optional[str] = None
+    destination: Optional[str] = None
 
 class AppartementUpdate(BaseModel):
     type_appart: Optional[str] = None
     prix: Optional[float] = None
-    etage: Optional[int] = None
+    etage: Optional[str] = None
     statut: Optional[str] = None
     surface: Optional[float] = None
+    surface_habitable: Optional[float] = None
+    surface_utile: Optional[float] = None
     description: Optional[str] = None
     client_id: Optional[str] = None
+    bloc: Optional[str] = None
+    numero_lot: Optional[str] = None
+    destination: Optional[str] = None
 
 class WhatsAppMessage(BaseModel):
     phone: str
@@ -509,11 +519,16 @@ async def get_appartements(current_user: dict = Depends(get_current_user)):
             "residence_id": a.get("residence_id", ""),
             "type_appart": a.get("type_appart", ""),
             "prix": a.get("prix", 0),
-            "etage": a.get("etage", 0),
+            "etage": a.get("etage", ""),
             "statut": a.get("statut", "disponible"),
             "surface": a.get("surface"),
+            "surface_habitable": a.get("surface_habitable"),
+            "surface_utile": a.get("surface_utile"),
             "description": a.get("description", ""),
-            "client_id": a.get("client_id")
+            "client_id": a.get("client_id"),
+            "bloc": a.get("bloc", ""),
+            "numero_lot": a.get("numero_lot", ""),
+            "destination": a.get("destination", "")
         })
     return result
 
@@ -598,9 +613,29 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
             "created_at": c.get("created_at", "")
         })
     
+    # Logements only stats
+    total_logements = await db.appartements.count_documents({"destination": "Logement"})
+    logements_disponibles = await db.appartements.count_documents({"destination": "Logement", "statut": "disponible"})
+    logements_reserves = await db.appartements.count_documents({"destination": "Logement", "statut": "réservé"})
+    logements_vendus = await db.appartements.count_documents({"destination": "Logement", "statut": "vendu"})
+    
+    # Stats by bloc
+    blocs_stats = {}
+    for bloc in ["A", "B", "C", "D", "E", "F", "G", "H"]:
+        blocs_stats[bloc] = {
+            "total": await db.appartements.count_documents({"bloc": bloc, "destination": "Logement"}),
+            "disponible": await db.appartements.count_documents({"bloc": bloc, "destination": "Logement", "statut": "disponible"}),
+            "reserve": await db.appartements.count_documents({"bloc": bloc, "destination": "Logement", "statut": "réservé"}),
+            "vendu": await db.appartements.count_documents({"bloc": bloc, "destination": "Logement", "statut": "vendu"}),
+        }
+    
     return {
         "total_clients": total_clients,
         "total_appartements": total_appartements,
+        "total_logements": total_logements,
+        "logements_disponibles": logements_disponibles,
+        "logements_reserves": logements_reserves,
+        "logements_vendus": logements_vendus,
         "appartements_disponibles": apparts_disponibles,
         "appartements_reserves": apparts_reserves,
         "appartements_vendus": apparts_vendus,
@@ -617,7 +652,8 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
             "froid": clients_froid
         },
         "whatsapp_leads": whatsapp_leads,
-        "recent_clients": recent_clients
+        "recent_clients": recent_clients,
+        "blocs_stats": blocs_stats
     }
 
 # ============ WHATSAPP WEBHOOK (Meta Business API) ============
@@ -909,18 +945,22 @@ async def export_appartements_excel(current_user: dict = Depends(get_current_use
         residences[str(r["_id"])] = r.get("nom", "")
     
     # Headers
-    headers = ["Résidence", "Type", "Prix (DA)", "Étage", "Surface (m²)", "Statut"]
+    headers = ["Lot", "Bloc", "Résidence", "Type", "Étage", "Surface Hab. (m²)", "Surface Utile (m²)", "Prix (DA)", "Statut", "Destination"]
     ws.append(headers)
     
     # Data
     async for a in db.appartements.find({}):
         ws.append([
+            a.get("numero_lot", ""),
+            a.get("bloc", ""),
             residences.get(a.get("residence_id", ""), ""),
             a.get("type_appart", ""),
+            a.get("etage", ""),
+            a.get("surface_habitable", ""),
+            a.get("surface_utile", ""),
             a.get("prix", 0),
-            a.get("etage", 0),
-            a.get("surface", ""),
-            a.get("statut", "")
+            a.get("statut", ""),
+            a.get("destination", "")
         ])
     
     output = io.BytesIO()
@@ -1042,16 +1082,14 @@ async def startup_event():
         )
         logger.info(f"Admin password updated: {admin_email}")
     
-    # Seed default residences
+    # Seed EDIMCO residence
     residences_count = await db.residences.count_documents({})
     if residences_count == 0:
         default_residences = [
-            {"nom": "Résidence A", "adresse": "", "description": "Première résidence", "created_at": datetime.now(timezone.utc).isoformat()},
-            {"nom": "Résidence B", "adresse": "", "description": "Deuxième résidence", "created_at": datetime.now(timezone.utc).isoformat()},
-            {"nom": "Résidence C", "adresse": "", "description": "Troisième résidence", "created_at": datetime.now(timezone.utc).isoformat()}
+            {"nom": "EDIMCO", "adresse": "EDIMCO, Commune de Bejaia, Wilaya de Bejaia", "description": "Résidence DJERBA - 264 logements promotionnels en R+11 avec sous-sol, duplex 10e-11e étage, RDC et 1er étage commercial/service, crèche et parking souterrain", "created_at": datetime.now(timezone.utc).isoformat()},
         ]
         await db.residences.insert_many(default_residences)
-        logger.info("Default residences created")
+        logger.info("EDIMCO residence created")
     
     # Write test credentials
     import os as os_module

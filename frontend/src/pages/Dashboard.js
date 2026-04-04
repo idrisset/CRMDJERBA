@@ -53,21 +53,21 @@ export function Dashboard() {
     },
     {
       title: t('availableApts'),
-      value: stats?.appartements_disponibles || 0,
+      value: stats?.logements_disponibles || stats?.appartements_disponibles || 0,
       icon: Building2,
       color: 'text-emerald-600',
       bg: 'bg-emerald-50'
     },
     {
       title: t('reservedApts'),
-      value: stats?.appartements_reserves || 0,
+      value: stats?.logements_reserves || stats?.appartements_reserves || 0,
       icon: Calendar,
       color: 'text-amber-600',
       bg: 'bg-amber-50'
     },
     {
       title: t('soldApts'),
-      value: stats?.appartements_vendus || 0,
+      value: stats?.logements_vendus || stats?.appartements_vendus || 0,
       icon: TrendingUp,
       color: 'text-slate-600',
       bg: 'bg-slate-100'
@@ -129,6 +129,46 @@ export function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Blocs EDIMCO */}
+      <Card className="card-luxury" data-testid="blocs-edimco">
+        <CardHeader>
+          <CardTitle className="text-lg font-medium text-[#1E3A5F] font-['Outfit'] flex items-center gap-2">
+            <Building2 className="h-5 w-5" />
+            EDIMCO - Blocs A-H
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+            {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map(bloc => {
+              const bs = stats?.blocs_stats?.[bloc] || {};
+              const total = bs.total || 0;
+              const dispo = bs.disponible || 0;
+              const reserve = bs.reserve || 0;
+              const vendu = bs.vendu || 0;
+              const pct = total > 0 ? Math.round(((reserve + vendu) / total) * 100) : 0;
+              return (
+                <div key={bloc} className="rounded-lg border border-slate-200 p-3 text-center hover:shadow-md transition-shadow">
+                  <div className="text-lg font-bold text-[#1E3A5F] font-['Outfit']">Bloc {bloc}</div>
+                  <div className="text-2xl font-light text-slate-800 mt-1">{total}</div>
+                  <div className="text-xs text-slate-500 mb-2">logements</div>
+                  <div className="w-full bg-slate-100 rounded-full h-1.5 mb-2">
+                    <div
+                      className="h-1.5 rounded-full bg-gradient-to-r from-emerald-400 to-[#1E3A5F]"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-center gap-2 text-xs">
+                    <span className="text-emerald-600">{dispo}</span>
+                    <span className="text-amber-600">{reserve}</span>
+                    <span className="text-slate-500">{vendu}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Clients par statut */}
