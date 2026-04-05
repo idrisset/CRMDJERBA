@@ -4,7 +4,9 @@ import { useWebSocket } from '../contexts/WebSocketContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Users, Building2, Calendar, TrendingUp, MessageSquare, Clock } from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Users, Building2, Calendar, TrendingUp, MessageSquare, Clock, Database, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -47,6 +49,22 @@ export function Dashboard() {
       </div>
     );
   }
+
+  const totalApparts = stats?.total_appartements || 0;
+  const [seeding, setSeeding] = useState(false);
+
+  const handleSeed = async () => {
+    setSeeding(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/seed`);
+      toast.success(data.message);
+      fetchStats();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Erreur de seed');
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const statCards = [
     {
@@ -102,6 +120,24 @@ export function Dashboard() {
         </h1>
         <p className="text-slate-500 mt-1">{t('overview')}</p>
       </div>
+
+      {/* Seed Button if empty */}
+      {totalApparts === 0 && !loading && (
+        <Card className="border-amber-200 bg-amber-50" data-testid="seed-banner">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-amber-800">Base de données vide</p>
+                <p className="text-sm text-amber-600 mt-1">Cliquez pour charger les 296 lots EDIMCO</p>
+              </div>
+              <Button onClick={handleSeed} disabled={seeding} className="bg-[#C41E3A] hover:bg-[#9A152C]" data-testid="seed-btn">
+                {seeding ? <Loader2 className="h-4 w-4 animate-spin me-2" /> : <Database className="h-4 w-4 me-2" />}
+                {seeding ? 'Chargement...' : 'Initialiser EDIMCO'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 stagger-fade-in">

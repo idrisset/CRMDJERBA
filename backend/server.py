@@ -1492,6 +1492,53 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+# ============ ADMIN SEED ENDPOINT ============
+@api_router.post("/admin/seed")
+async def admin_seed_edimco(current_user: dict = Depends(get_current_user)):
+    """Force seed EDIMCO apartments - admin only"""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin uniquement")
+    
+    apparts_count = await db.appartements.count_documents({})
+    if apparts_count > 0:
+        return {"message": f"Base déjà peuplée: {apparts_count} appartements", "seeded": False}
+    
+    # Ensure EDIMCO residence exists
+    residence = await db.residences.find_one({"nom": "EDIMCO"})
+    if not residence:
+        result = await db.residences.insert_one({
+            "nom": "EDIMCO",
+            "adresse": "EDIMCO, Commune de Bejaia, Wilaya de Bejaia",
+            "description": "Résidence DJERBA - 264 logements promotionnels",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        residence = await db.residences.find_one({"_id": result.inserted_id})
+    
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from seed_edimco import ALL_LOTS, PRIX_M2
+    
+    rid = str(residence["_id"])
+    docs = []
+    for lot in ALL_LOTS:
+        docs.append({
+            "residence_id": rid,
+            "numero_lot": lot["lot"],
+            "bloc": lot["bloc"],
+            "etage": lot["etage"],
+            "destination": lot["dest"],
+            "type_appart": lot["type"],
+            "surface_habitable": lot["sh"],
+            "surface_utile": lot["su"],
+            "prix": round(lot["sh"] * PRIX_M2),
+            "statut": "disponible",
+            "client_id": None,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+    await db.appartements.insert_many(docs)
+    await manager.broadcast({"type": "appartement_created"})
+    return {"message": f"{len(docs)} lots EDIMCO créés", "seeded": True, "count": len(docs)}
+
 # Include router
 app.include_router(api_router)
 
@@ -1539,28 +1586,33 @@ async def startup_event():
     apparts_count = await db.appartements.count_documents({})
     if apparts_count == 0:
         logger.info("No apartments found — seeding EDIMCO lots...")
-        residence = await db.residences.find_one({"nom": "EDIMCO"})
-        if residence:
-            from seed_edimco import ALL_LOTS, PRIX_M2
-            rid = str(residence["_id"])
-            docs = []
-            for lot in ALL_LOTS:
-                docs.append({
-                    "residence_id": rid,
-                    "numero_lot": lot["lot"],
-                    "bloc": lot["bloc"],
-                    "etage": lot["etage"],
-                    "destination": lot["dest"],
-                    "type_appart": lot["type"],
-                    "surface_habitable": lot["sh"],
-                    "surface_utile": lot["su"],
-                    "prix": round(lot["sh"] * PRIX_M2),
-                    "statut": "disponible",
-                    "client_id": None,
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                })
-            await db.appartements.insert_many(docs)
-            logger.info(f"Seeded {len(docs)} EDIMCO lots")
+        try:
+            residence = await db.residences.find_one({"nom": "EDIMCO"})
+            if residence:
+                import sys
+                sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                from seed_edimco import ALL_LOTS, PRIX_M2
+                rid = str(residence["_id"])
+                docs = []
+                for lot in ALL_LOTS:
+                    docs.append({
+                        "residence_id": rid,
+                        "numero_lot": lot["lot"],
+                        "bloc": lot["bloc"],
+                        "etage": lot["etage"],
+                        "destination": lot["dest"],
+                        "type_appart": lot["type"],
+                        "surface_habitable": lot["sh"],
+                        "surface_utile": lot["su"],
+                        "prix": round(lot["sh"] * PRIX_M2),
+                        "statut": "disponible",
+                        "client_id": None,
+                        "created_at": datetime.now(timezone.utc).isoformat()
+                    })
+                await db.appartements.insert_many(docs)
+                logger.info(f"Seeded {len(docs)} EDIMCO lots")
+        except Exception as e:
+            logger.error(f"SEED ERROR: {e}")
     
     # Write test credentials
     import os as os_module
