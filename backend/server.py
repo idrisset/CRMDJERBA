@@ -1376,6 +1376,94 @@ async def export_clients_pdf(current_user: dict = Depends(get_current_user)):
         headers={"Content-Disposition": f"attachment; filename=clients_{datetime.now().strftime('%Y%m%d')}.pdf"}
     )
 
+# ============ PROSPECTS EXPORT ROUTES ============
+@api_router.get("/export/prospects/excel")
+async def export_prospects_excel(current_user: dict = Depends(get_current_user)):
+    """Export prospects to Excel"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Prospects"
+    
+    headers = ["Nom", "Téléphone 1", "Téléphone 2", "Email", "Ville", "Quartier", "Type Logement", "Étage Souhaité", "Nb Pièces", "Budget Min", "Budget Max", "Mode Paiement", "Objectif", "Situation", "Source", "Notes", "Date création"]
+    ws.append(headers)
+    
+    async for p in db.prospects.find({}):
+        ws.append([
+            p.get("nom", ""),
+            p.get("telephone", ""),
+            p.get("telephone2", ""),
+            p.get("email", ""),
+            p.get("ville", ""),
+            p.get("quartier", ""),
+            p.get("type_logement", ""),
+            p.get("etage_souhaite", ""),
+            p.get("nombre_pieces", ""),
+            p.get("budget_min", ""),
+            p.get("budget_max", ""),
+            p.get("mode_paiement", ""),
+            p.get("objectif", ""),
+            p.get("situation_familiale", ""),
+            p.get("source", ""),
+            p.get("notes", ""),
+            p.get("created_at", "")
+        ])
+    
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=prospects_{datetime.now().strftime('%Y%m%d')}.xlsx"}
+    )
+
+@api_router.get("/export/prospects/pdf")
+async def export_prospects_pdf(current_user: dict = Depends(get_current_user)):
+    """Export prospects to PDF"""
+    output = io.BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=A4, topMargin=1*cm, bottomMargin=1*cm)
+    
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=16, textColor=colors.HexColor('#1E3A5F'))
+    elements.append(Paragraph("EDIMCO - Prospects Big Data", title_style))
+    elements.append(Spacer(1, 0.5*cm))
+    
+    data = [["Nom", "Téléphone", "Ville", "Quartier", "Type", "Source"]]
+    async for p in db.prospects.find({}).sort("created_at", -1):
+        data.append([
+            p.get("nom", "")[:20],
+            p.get("telephone", ""),
+            p.get("ville", ""),
+            p.get("quartier", "")[:15],
+            p.get("type_logement", ""),
+            p.get("source", "")
+        ])
+    
+    if len(data) > 1:
+        table = Table(data, colWidths=[4*cm, 3*cm, 3*cm, 3*cm, 2*cm, 2*cm])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F9FA')])
+        ]))
+        elements.append(table)
+    
+    doc.build(elements)
+    output.seek(0)
+    
+    return StreamingResponse(
+        output,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=prospects_{datetime.now().strftime('%Y%m%d')}.pdf"}
+    )
+
 # ============ USERS ROUTES (Admin only) ============
 @api_router.get("/users")
 async def get_users(current_user: dict = Depends(get_current_user)):

@@ -13,6 +13,7 @@ import { Clients } from "./pages/Clients";
 import { Appartements } from "./pages/Appartements";
 import { WhatsApp } from "./pages/WhatsApp";
 import { Parametres } from "./pages/Parametres";
+import { Prospects } from "./pages/Prospects";
 import { Toaster } from "./components/ui/sonner";
 
 function App() {
@@ -64,6 +65,16 @@ function App() {
                   <ProtectedRoute>
                     <Layout>
                       <WhatsApp />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/prospects"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <Prospects />
                     </Layout>
                   </ProtectedRoute>
                 }

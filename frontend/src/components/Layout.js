@@ -12,7 +12,8 @@ import {
   Wifi,
   WifiOff,
   User,
-  Globe
+  Globe,
+  Database
 } from 'lucide-react';
 import { Button } from './ui/button';
 import {
@@ -46,6 +47,7 @@ export function Layout({ children }) {
     { to: '/', icon: LayoutDashboard, label: t('dashboard') },
     { to: '/clients', icon: Users, label: t('clients') },
     { to: '/appartements', icon: Building2, label: t('apartments') },
+    { to: '/prospects', icon: Database, label: t('prospects') },
     { to: '/whatsapp', icon: MessageSquare, label: t('whatsapp') },
   ];
 
