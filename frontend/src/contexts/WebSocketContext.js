@@ -9,7 +9,14 @@ export function WebSocketProvider({ children }) {
   const reconnectTimeoutRef = useRef(null);
 
   const connect = useCallback(() => {
-    const wsUrl = process.env.REACT_APP_BACKEND_URL?.replace('https://', 'wss://').replace('http://', 'ws://');
+    const backendUrl = process.env.REACT_APP_BACKEND_URL;
+    let wsUrl;
+    if (backendUrl) {
+      wsUrl = backendUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+    } else {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${proto}//${window.location.host}`;
+    }
     if (!wsUrl) return;
 
     try {
