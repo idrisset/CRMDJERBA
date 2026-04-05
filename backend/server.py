@@ -1535,6 +1535,33 @@ async def startup_event():
         await db.residences.insert_many(default_residences)
         logger.info("EDIMCO residence created")
     
+    # Seed EDIMCO apartments if empty
+    apparts_count = await db.appartements.count_documents({})
+    if apparts_count == 0:
+        logger.info("No apartments found — seeding EDIMCO lots...")
+        residence = await db.residences.find_one({"nom": "EDIMCO"})
+        if residence:
+            from seed_edimco import ALL_LOTS, PRIX_M2
+            rid = str(residence["_id"])
+            docs = []
+            for lot in ALL_LOTS:
+                docs.append({
+                    "residence_id": rid,
+                    "numero_lot": lot["lot"],
+                    "bloc": lot["bloc"],
+                    "etage": lot["etage"],
+                    "destination": lot["dest"],
+                    "type_appart": lot["type"],
+                    "surface_habitable": lot["sh"],
+                    "surface_utile": lot["su"],
+                    "prix": round(lot["sh"] * PRIX_M2),
+                    "statut": "disponible",
+                    "client_id": None,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                })
+            await db.appartements.insert_many(docs)
+            logger.info(f"Seeded {len(docs)} EDIMCO lots")
+    
     # Write test credentials
     import os as os_module
     os_module.makedirs("/app/memory", exist_ok=True)
