@@ -59,13 +59,13 @@ export function Clients() {
 
   const fetchData = async () => {
     try {
-      const c = await axios.get(`${API}/clients`, { withCredentials: true });
+      const c = await axios.get(`${API}/clients`);
       setClients(c.data || []);
     } catch (e) {
       if (e.response?.status !== 401) toast.error(t('error'));
     }
     try {
-      const a = await axios.get(`${API}/appartements`, { withCredentials: true });
+      const a = await axios.get(`${API}/appartements`);
       setAppartements(a.data || []);
     } catch (e) {
       // silently fail for apartments
@@ -136,9 +136,9 @@ export function Clients() {
     };
     try {
       if (editingClient) {
-        await axios.put(`${API}/clients/${editingClient.id}`, payload, { withCredentials: true });
+        await axios.put(`${API}/clients/${editingClient.id}`, payload);
       } else {
-        await axios.post(`${API}/clients`, payload, { withCredentials: true });
+        await axios.post(`${API}/clients`, payload);
       }
       toast.success(t('success'));
       setIsDialogOpen(false);
@@ -153,7 +153,7 @@ export function Clients() {
   const handleDelete = async (id) => {
     if (!window.confirm(t('confirm') + '?')) return;
     try {
-      await axios.delete(`${API}/clients/${id}`, { withCredentials: true });
+      await axios.delete(`${API}/clients/${id}`);
       toast.success(t('success'));
       fetchData();
     } catch (e) {

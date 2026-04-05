@@ -18,8 +18,8 @@ export function Dashboard() {
   const fetchStats = async () => {
     try {
       const [statsRes, reservRes] = await Promise.all([
-        axios.get(`${API}/dashboard`, { withCredentials: true }),
-        axios.get(`${API}/reservations`, { withCredentials: true }),
+        axios.get(`${API}/dashboard`),
+        axios.get(`${API}/reservations`),
       ]);
       setStats(statsRes.data);
       setReservations(reservRes.data || []);

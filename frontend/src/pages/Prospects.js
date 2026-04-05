@@ -59,8 +59,8 @@ export function Prospects() {
   const fetchData = async () => {
     try {
       const [pRes, aRes] = await Promise.all([
-        axios.get(`${API}/prospects`, { withCredentials: true }),
-        axios.get(`${API}/prospects/analytics`, { withCredentials: true }),
+        axios.get(`${API}/prospects`),
+        axios.get(`${API}/prospects/analytics`),
       ]);
       setProspects(pRes.data || []);
       setAnalytics(aRes.data || null);
@@ -124,9 +124,9 @@ export function Prospects() {
     };
     try {
       if (editingProspect) {
-        await axios.put(`${API}/prospects/${editingProspect.id}`, payload, { withCredentials: true });
+        await axios.put(`${API}/prospects/${editingProspect.id}`, payload);
       } else {
-        await axios.post(`${API}/prospects`, payload, { withCredentials: true });
+        await axios.post(`${API}/prospects`, payload);
       }
       toast.success(t('success'));
       setIsDialogOpen(false);
@@ -141,7 +141,7 @@ export function Prospects() {
   const handleDelete = async (id) => {
     if (!window.confirm(t('confirm') + '?')) return;
     try {
-      await axios.delete(`${API}/prospects/${id}`, { withCredentials: true });
+      await axios.delete(`${API}/prospects/${id}`);
       toast.success(t('success'));
       fetchData();
     } catch (e) {

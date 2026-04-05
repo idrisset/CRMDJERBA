@@ -23,7 +23,7 @@ export function WhatsApp() {
 
   const fetchConversations = async () => {
     try {
-      const { data } = await axios.get(`${API}/whatsapp/conversations`, { withCredentials: true });
+      const { data } = await axios.get(`${API}/whatsapp/conversations`);
       setConversations(data);
     } catch (e) {
       console.error('Error fetching conversations:', e);
@@ -46,8 +46,7 @@ export function WhatsApp() {
     try {
       const { data } = await axios.post(
         `${API}/whatsapp/message`,
-        { phone: testPhone, message: testMessage },
-        { withCredentials: true }
+        { phone: testPhone, message: testMessage }
       );
       setTestResponse(data.response);
       setTestMessage('');

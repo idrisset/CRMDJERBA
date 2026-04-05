@@ -48,9 +48,9 @@ export function Parametres() {
   const fetchData = async () => {
     try {
       const [residencesRes, usersRes, notifRes] = await Promise.all([
-        axios.get(`${API}/residences`, { withCredentials: true }),
-        axios.get(`${API}/users`, { withCredentials: true }),
-        axios.get(`${API}/settings/notifications`, { withCredentials: true }),
+        axios.get(`${API}/residences`),
+        axios.get(`${API}/users`),
+        axios.get(`${API}/settings/notifications`),
       ]);
       setResidences(residencesRes.data);
       setUsers(usersRes.data);
@@ -91,10 +91,10 @@ export function Parametres() {
 
     try {
       if (editingResidence) {
-        await axios.put(`${API}/residences/${editingResidence.id}`, formData, { withCredentials: true });
+        await axios.put(`${API}/residences/${editingResidence.id}`, formData);
         toast.success(t('success'));
       } else {
-        await axios.post(`${API}/residences`, formData, { withCredentials: true });
+        await axios.post(`${API}/residences`, formData);
         toast.success(t('success'));
       }
       setIsDialogOpen(false);
@@ -111,7 +111,7 @@ export function Parametres() {
     if (!window.confirm(t('confirm') + '?')) return;
 
     try {
-      await axios.delete(`${API}/residences/${residenceId}`, { withCredentials: true });
+      await axios.delete(`${API}/residences/${residenceId}`);
       toast.success(t('success'));
       fetchData();
     } catch (e) {
@@ -139,7 +139,7 @@ export function Parametres() {
   const handleSaveNotifications = async () => {
     setSavingNotif(true);
     try {
-      await axios.put(`${API}/settings/notifications`, notifSettings, { withCredentials: true });
+      await axios.put(`${API}/settings/notifications`, notifSettings);
       toast.success(t('success'));
     } catch (e) {
       toast.error(t('error'));

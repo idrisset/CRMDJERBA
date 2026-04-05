@@ -68,9 +68,9 @@ export function Appartements() {
   const fetchData = async () => {
     try {
       const [a, r, c] = await Promise.all([
-        axios.get(`${API}/appartements`, { withCredentials: true }),
-        axios.get(`${API}/residences`, { withCredentials: true }),
-        axios.get(`${API}/clients`, { withCredentials: true }),
+        axios.get(`${API}/appartements`),
+        axios.get(`${API}/residences`),
+        axios.get(`${API}/clients`),
       ]);
       setAppartements(a.data || []);
       setResidences(r.data || []);
@@ -169,9 +169,9 @@ export function Appartements() {
     };
     try {
       if (editingAppart) {
-        await axios.put(`${API}/appartements/${editingAppart.id}`, payload, { withCredentials: true });
+        await axios.put(`${API}/appartements/${editingAppart.id}`, payload);
       } else {
-        await axios.post(`${API}/appartements`, payload, { withCredentials: true });
+        await axios.post(`${API}/appartements`, payload);
       }
       toast.success(t('success'));
       setIsDialogOpen(false);
@@ -186,7 +186,7 @@ export function Appartements() {
   const handleDelete = async (id) => {
     if (!window.confirm(t('confirm') + '?')) return;
     try {
-      await axios.delete(`${API}/appartements/${id}`, { withCredentials: true });
+      await axios.delete(`${API}/appartements/${id}`);
       toast.success(t('success'));
       fetchData();
     } catch (e) {
