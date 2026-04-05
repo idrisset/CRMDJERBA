@@ -62,13 +62,13 @@ export function Clients() {
       const c = await axios.get(`${API}/clients`);
       setClients(c.data || []);
     } catch (e) {
-      if (e.response?.status !== 401) toast.error(t('error'));
+      console.error('Clients fetch error:', e?.response?.status, e?.response?.data, e?.message);
     }
     try {
       const a = await axios.get(`${API}/appartements`);
       setAppartements(a.data || []);
     } catch (e) {
-      // silently fail for apartments
+      console.error('Appartements fetch error:', e?.message);
     }
     setLoading(false);
   };

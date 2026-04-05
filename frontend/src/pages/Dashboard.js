@@ -14,6 +14,7 @@ export function Dashboard() {
   const [stats, setStats] = useState(null);
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
   const { lastMessage } = useWebSocket();
   const { t } = useLanguage();
 
@@ -51,7 +52,6 @@ export function Dashboard() {
   }
 
   const totalApparts = stats?.total_appartements || 0;
-  const [seeding, setSeeding] = useState(false);
 
   const handleSeed = async () => {
     setSeeding(true);
