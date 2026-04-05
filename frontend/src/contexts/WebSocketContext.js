@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef } f
 const WebSocketContext = createContext(null);
 
 export function WebSocketProvider({ children }) {
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
   const [lastMessage, setLastMessage] = useState(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
@@ -17,7 +17,6 @@ export function WebSocketProvider({ children }) {
 
       wsRef.current.onopen = () => {
         setIsConnected(true);
-        console.log('WebSocket connected');
       };
 
       wsRef.current.onmessage = (event) => {
@@ -25,22 +24,20 @@ export function WebSocketProvider({ children }) {
           const data = JSON.parse(event.data);
           setLastMessage(data);
         } catch (e) {
-          console.error('WebSocket message parse error:', e);
+          // ignore parse errors
         }
       };
 
       wsRef.current.onclose = () => {
-        setIsConnected(false);
-        console.log('WebSocket disconnected');
-        // Reconnect after 3 seconds
-        reconnectTimeoutRef.current = setTimeout(connect, 3000);
+        // Reconnect silently after 5 seconds
+        reconnectTimeoutRef.current = setTimeout(connect, 5000);
       };
 
-      wsRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
+      wsRef.current.onerror = () => {
+        // silent - don't show errors to user
       };
     } catch (e) {
-      console.error('WebSocket connection error:', e);
+      // silent
     }
   }, []);
 
