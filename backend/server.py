@@ -146,6 +146,43 @@ class ResidenceUpdate(BaseModel):
     adresse: Optional[str] = None
     description: Optional[str] = None
 
+# ===== PROSPECTS (Fiche client immobilière - Big Data) =====
+class ProspectCreate(BaseModel):
+    nom: str
+    telephone: str
+    telephone2: Optional[str] = None
+    email: Optional[str] = None
+    ville: Optional[str] = None
+    quartier: Optional[str] = None
+    type_logement: Optional[str] = None
+    etage_souhaite: Optional[str] = None
+    nombre_pieces: Optional[int] = None
+    budget_min: Optional[float] = None
+    budget_max: Optional[float] = None
+    mode_paiement: Optional[str] = None
+    objectif: Optional[str] = None
+    situation_familiale: Optional[str] = None
+    notes: Optional[str] = None
+    source: Optional[str] = "foire"
+
+class ProspectUpdate(BaseModel):
+    nom: Optional[str] = None
+    telephone: Optional[str] = None
+    telephone2: Optional[str] = None
+    email: Optional[str] = None
+    ville: Optional[str] = None
+    quartier: Optional[str] = None
+    type_logement: Optional[str] = None
+    etage_souhaite: Optional[str] = None
+    nombre_pieces: Optional[int] = None
+    budget_min: Optional[float] = None
+    budget_max: Optional[float] = None
+    mode_paiement: Optional[str] = None
+    objectif: Optional[str] = None
+    situation_familiale: Optional[str] = None
+    notes: Optional[str] = None
+    source: Optional[str] = None
+
 class AppartementCreate(BaseModel):
     residence_id: str
     type_appart: str
@@ -619,6 +656,151 @@ async def delete_residence(residence_id: str, current_user: dict = Depends(get_c
     await manager.broadcast({"type": "residence_deleted", "data": {"id": residence_id}})
     
     return {"message": "Résidence supprimée"}
+
+# ============ PROSPECTS ROUTES (Fiche client immobilière) ============
+@api_router.get("/prospects")
+async def get_prospects(current_user: dict = Depends(get_current_user)):
+    result = []
+    async for p in db.prospects.find({}).sort("created_at", -1):
+        result.append({
+            "id": str(p["_id"]),
+            "nom": p.get("nom", ""),
+            "telephone": p.get("telephone", ""),
+            "telephone2": p.get("telephone2", ""),
+            "email": p.get("email", ""),
+            "ville": p.get("ville", ""),
+            "quartier": p.get("quartier", ""),
+            "type_logement": p.get("type_logement", ""),
+            "etage_souhaite": p.get("etage_souhaite", ""),
+            "nombre_pieces": p.get("nombre_pieces"),
+            "budget_min": p.get("budget_min"),
+            "budget_max": p.get("budget_max"),
+            "mode_paiement": p.get("mode_paiement", ""),
+            "objectif": p.get("objectif", ""),
+            "situation_familiale": p.get("situation_familiale", ""),
+            "notes": p.get("notes", ""),
+            "source": p.get("source", "foire"),
+            "created_at": p.get("created_at", ""),
+        })
+    return result
+
+@api_router.post("/prospects")
+async def create_prospect(prospect: ProspectCreate, current_user: dict = Depends(get_current_user)):
+    doc = {
+        **prospect.model_dump(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": current_user["_id"]
+    }
+    result = await db.prospects.insert_one(doc)
+    await manager.broadcast({"type": "prospect_created", "data": {"id": str(result.inserted_id)}})
+    return {"id": str(result.inserted_id), **prospect.model_dump()}
+
+@api_router.put("/prospects/{prospect_id}")
+async def update_prospect(prospect_id: str, prospect: ProspectUpdate, current_user: dict = Depends(get_current_user)):
+    update_data = {k: v for k, v in prospect.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Aucune donnée")
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    result = await db.prospects.update_one({"_id": ObjectId(prospect_id)}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Prospect non trouvé")
+    await manager.broadcast({"type": "prospect_updated", "data": {"id": prospect_id}})
+    return {"id": prospect_id, **update_data}
+
+@api_router.delete("/prospects/{prospect_id}")
+async def delete_prospect(prospect_id: str, current_user: dict = Depends(get_current_user)):
+    result = await db.prospects.delete_one({"_id": ObjectId(prospect_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Prospect non trouvé")
+    await manager.broadcast({"type": "prospect_deleted", "data": {"id": prospect_id}})
+    return {"message": "Prospect supprimé"}
+
+@api_router.get("/prospects/analytics")
+async def get_prospects_analytics(current_user: dict = Depends(get_current_user)):
+    total = await db.prospects.count_documents({})
+    
+    # Top villes
+    villes_pipeline = [
+        {"$match": {"ville": {"$ne": None, "$ne": ""}}},
+        {"$group": {"_id": "$ville", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10}
+    ]
+    villes = []
+    async for v in db.prospects.aggregate(villes_pipeline):
+        villes.append({"name": v["_id"], "count": v["count"]})
+    
+    # Top quartiers
+    quartiers_pipeline = [
+        {"$match": {"quartier": {"$ne": None, "$ne": ""}}},
+        {"$group": {"_id": "$quartier", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10}
+    ]
+    quartiers = []
+    async for q in db.prospects.aggregate(quartiers_pipeline):
+        quartiers.append({"name": q["_id"], "count": q["count"]})
+    
+    # Types de logement
+    types_pipeline = [
+        {"$match": {"type_logement": {"$ne": None, "$ne": ""}}},
+        {"$group": {"_id": "$type_logement", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    types = []
+    async for t in db.prospects.aggregate(types_pipeline):
+        types.append({"name": t["_id"], "count": t["count"]})
+    
+    # Objectifs
+    objectifs_pipeline = [
+        {"$match": {"objectif": {"$ne": None, "$ne": ""}}},
+        {"$group": {"_id": "$objectif", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    objectifs = []
+    async for o in db.prospects.aggregate(objectifs_pipeline):
+        objectifs.append({"name": o["_id"], "count": o["count"]})
+    
+    # Budget moyen
+    budget_pipeline = [
+        {"$match": {"budget_max": {"$ne": None, "$gt": 0}}},
+        {"$group": {"_id": None, "avg_min": {"$avg": "$budget_min"}, "avg_max": {"$avg": "$budget_max"}}}
+    ]
+    budget_avg = {"avg_min": 0, "avg_max": 0}
+    async for b in db.prospects.aggregate(budget_pipeline):
+        budget_avg = {"avg_min": b.get("avg_min", 0) or 0, "avg_max": b.get("avg_max", 0) or 0}
+    
+    # Mode de paiement
+    paiement_pipeline = [
+        {"$match": {"mode_paiement": {"$ne": None, "$ne": ""}}},
+        {"$group": {"_id": "$mode_paiement", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    paiements = []
+    async for p in db.prospects.aggregate(paiement_pipeline):
+        paiements.append({"name": p["_id"], "count": p["count"]})
+
+    # Top villes + quartiers combined
+    ville_quartier_pipeline = [
+        {"$match": {"ville": {"$ne": None, "$ne": ""}, "quartier": {"$ne": None, "$ne": ""}}},
+        {"$group": {"_id": {"ville": "$ville", "quartier": "$quartier"}, "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 15}
+    ]
+    zones = []
+    async for z in db.prospects.aggregate(ville_quartier_pipeline):
+        zones.append({"ville": z["_id"]["ville"], "quartier": z["_id"]["quartier"], "count": z["count"]})
+
+    return {
+        "total": total,
+        "top_villes": villes,
+        "top_quartiers": quartiers,
+        "top_types": types,
+        "objectifs": objectifs,
+        "budget_avg": budget_avg,
+        "modes_paiement": paiements,
+        "top_zones": zones
+    }
 
 # ============ DASHBOARD ROUTES ============
 
