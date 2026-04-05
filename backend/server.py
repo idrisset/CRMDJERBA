@@ -93,6 +93,24 @@ async def get_current_user(request: Request) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token invalide")
 
+# ============ AUDIT LOG HELPER ============
+SOFT_DELETE_FILTER = {"deleted_at": {"$eq": None}}
+
+async def audit_log(user: dict, action: str, entity_type: str, entity_id: str, entity_name: str = "", old_values: dict = None, new_values: dict = None):
+    """Log an action to the audit_logs collection (immutable)."""
+    doc = {
+        "user_id": user.get("_id", ""),
+        "user_name": user.get("name", user.get("email", "")),
+        "action": action,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "entity_name": entity_name,
+        "old_values": old_values,
+        "new_values": new_values,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    await db.audit_logs.insert_one(doc)
+
 # Models
 class UserLogin(BaseModel):
     email: EmailStr
@@ -380,6 +398,10 @@ async def login(credentials: UserLogin):
     access_token = create_access_token(user_id, user["email"])
     refresh_token = create_refresh_token(user_id)
     
+    # Audit login
+    user_dict = {"_id": user_id, "name": user.get("name", ""), "email": user["email"]}
+    await audit_log(user_dict, "LOGIN", "session", user_id, user.get("name", user["email"]))
+    
     return {
         "id": user_id,
         "email": user["email"],
@@ -390,7 +412,8 @@ async def login(credentials: UserLogin):
     }
 
 @api_router.post("/auth/logout")
-async def logout():
+async def logout(current_user: dict = Depends(get_current_user)):
+    await audit_log(current_user, "LOGOUT", "session", current_user["_id"], current_user.get("name", ""))
     response = JSONResponse(content={"message": "Déconnexion réussie"})
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")
@@ -425,7 +448,7 @@ async def refresh_token(request: Request):
 @api_router.get("/clients")
 async def get_clients(current_user: dict = Depends(get_current_user)):
     result = []
-    async for c in db.clients.find({}):
+    async for c in db.clients.find(SOFT_DELETE_FILTER):
         client_data = {
             "id": str(c["_id"]),
             "nom": c.get("nom", ""),
@@ -458,11 +481,14 @@ async def create_client(client: ClientCreate, current_user: dict = Depends(get_c
         **client_data,
         "appartement_id": appartement_id,
         "source": "manual",
+        "deleted_at": None,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": current_user["_id"]
     }
     result = await db.clients.insert_one(client_doc)
     client_id = str(result.inserted_id)
+    
+    await audit_log(current_user, "CREATE", "client", client_id, client_data.get("nom", ""), new_values=client_data)
     
     # If apartment assigned, block it
     if appartement_id:
@@ -499,9 +525,12 @@ async def update_client(client_id: str, client: ClientUpdate, current_user: dict
     update_data["updated_by"] = current_user["_id"]
     
     # Get existing client to check old apartment
-    existing = await db.clients.find_one({"_id": ObjectId(client_id)})
+    existing = await db.clients.find_one({"_id": ObjectId(client_id), **SOFT_DELETE_FILTER})
     if not existing:
         raise HTTPException(status_code=404, detail="Client non trouvé")
+    
+    # Capture old values for audit
+    old_vals = {k: existing.get(k) for k in update_data.keys() if existing.get(k) != update_data.get(k)}
     
     old_appart_id = existing.get("appartement_id")
     new_appart_id = client.appartement_id
@@ -575,25 +604,36 @@ async def update_client(client_id: str, client: ClientUpdate, current_user: dict
     )
     
     await manager.broadcast({"type": "client_updated", "data": {"id": client_id}})
+    await audit_log(current_user, "UPDATE", "client", client_id, existing.get("nom", ""), old_values=old_vals, new_values=update_data)
     return {"id": client_id, **update_data}
 
 @api_router.delete("/clients/{client_id}")
 async def delete_client(client_id: str, current_user: dict = Depends(get_current_user)):
+    existing = await db.clients.find_one({"_id": ObjectId(client_id), **SOFT_DELETE_FILTER})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Client non trouvé")
+    
     # Release any apartment assigned to this client
-    existing = await db.clients.find_one({"_id": ObjectId(client_id)})
-    if existing and existing.get("appartement_id"):
+    if existing.get("appartement_id"):
         await db.appartements.update_one(
             {"_id": ObjectId(existing["appartement_id"])},
             {"$set": {"statut": "disponible", "client_id": None}}
         )
         await manager.broadcast({"type": "appartement_updated", "data": {"id": existing["appartement_id"]}})
     
-    result = await db.clients.delete_one({"_id": ObjectId(client_id)})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Client non trouvé")
+    # Soft delete
+    await db.clients.update_one(
+        {"_id": ObjectId(client_id)},
+        {"$set": {
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": current_user["_id"],
+            "deleted_by_name": current_user.get("name", current_user.get("email", ""))
+        }}
+    )
     
+    await audit_log(current_user, "DELETE", "client", client_id, existing.get("nom", ""))
     await manager.broadcast({"type": "client_deleted", "data": {"id": client_id}})
-    return {"message": "Client supprimé"}
+    return {"message": "Client déplacé dans la corbeille"}
 
 # ============ RESIDENCES ROUTES ============
 @api_router.get("/residences")
@@ -661,7 +701,7 @@ async def delete_residence(residence_id: str, current_user: dict = Depends(get_c
 @api_router.get("/prospects")
 async def get_prospects(current_user: dict = Depends(get_current_user)):
     result = []
-    async for p in db.prospects.find({}).sort("created_at", -1):
+    async for p in db.prospects.find(SOFT_DELETE_FILTER).sort("created_at", -1):
         result.append({
             "id": str(p["_id"]),
             "nom": p.get("nom", ""),
@@ -688,10 +728,12 @@ async def get_prospects(current_user: dict = Depends(get_current_user)):
 async def create_prospect(prospect: ProspectCreate, current_user: dict = Depends(get_current_user)):
     doc = {
         **prospect.model_dump(),
+        "deleted_at": None,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": current_user["_id"]
     }
     result = await db.prospects.insert_one(doc)
+    await audit_log(current_user, "CREATE", "prospect", str(result.inserted_id), prospect.nom, new_values=prospect.model_dump())
     await manager.broadcast({"type": "prospect_created", "data": {"id": str(result.inserted_id)}})
     return {"id": str(result.inserted_id), **prospect.model_dump()}
 
@@ -701,27 +743,41 @@ async def update_prospect(prospect_id: str, prospect: ProspectUpdate, current_us
     if not update_data:
         raise HTTPException(status_code=400, detail="Aucune donnée")
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    existing_p = await db.prospects.find_one({"_id": ObjectId(prospect_id), **SOFT_DELETE_FILTER})
+    if not existing_p:
+        raise HTTPException(status_code=404, detail="Prospect non trouvé")
+    old_vals = {k: existing_p.get(k) for k in update_data.keys() if existing_p.get(k) != update_data.get(k)}
     result = await db.prospects.update_one({"_id": ObjectId(prospect_id)}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Prospect non trouvé")
+    await audit_log(current_user, "UPDATE", "prospect", prospect_id, existing_p.get("nom", ""), old_values=old_vals, new_values=update_data)
     await manager.broadcast({"type": "prospect_updated", "data": {"id": prospect_id}})
     return {"id": prospect_id, **update_data}
 
 @api_router.delete("/prospects/{prospect_id}")
 async def delete_prospect(prospect_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.prospects.delete_one({"_id": ObjectId(prospect_id)})
-    if result.deleted_count == 0:
+    existing = await db.prospects.find_one({"_id": ObjectId(prospect_id), **SOFT_DELETE_FILTER})
+    if not existing:
         raise HTTPException(status_code=404, detail="Prospect non trouvé")
+    await db.prospects.update_one(
+        {"_id": ObjectId(prospect_id)},
+        {"$set": {
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": current_user["_id"],
+            "deleted_by_name": current_user.get("name", current_user.get("email", ""))
+        }}
+    )
+    await audit_log(current_user, "DELETE", "prospect", prospect_id, existing.get("nom", ""))
     await manager.broadcast({"type": "prospect_deleted", "data": {"id": prospect_id}})
-    return {"message": "Prospect supprimé"}
+    return {"message": "Prospect déplacé dans la corbeille"}
 
 @api_router.get("/prospects/analytics")
 async def get_prospects_analytics(current_user: dict = Depends(get_current_user)):
-    total = await db.prospects.count_documents({})
+    total = await db.prospects.count_documents(SOFT_DELETE_FILTER)
     
     # Top villes
     villes_pipeline = [
-        {"$match": {"ville": {"$ne": None, "$ne": ""}}},
+        {"$match": {"ville": {"$ne": None, "$ne": ""}, "deleted_at": None}},
         {"$group": {"_id": "$ville", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
         {"$limit": 10}
@@ -808,7 +864,7 @@ async def get_prospects_analytics(current_user: dict = Depends(get_current_user)
 @api_router.get("/appartements")
 async def get_appartements(current_user: dict = Depends(get_current_user)):
     result = []
-    async for a in db.appartements.find({}):
+    async for a in db.appartements.find(SOFT_DELETE_FILTER):
         result.append({
             "id": str(a["_id"]),
             "residence_id": a.get("residence_id", ""),
@@ -831,11 +887,13 @@ async def get_appartements(current_user: dict = Depends(get_current_user)):
 async def create_appartement(appart: AppartementCreate, current_user: dict = Depends(get_current_user)):
     appart_doc = {
         **appart.model_dump(),
+        "deleted_at": None,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "created_by": current_user["_id"]
     }
     result = await db.appartements.insert_one(appart_doc)
     
+    await audit_log(current_user, "CREATE", "appartement", str(result.inserted_id), appart.numero_lot or "", new_values=appart.model_dump())
     await manager.broadcast({"type": "appartement_created", "data": {"id": str(result.inserted_id)}})
     
     return {"id": str(result.inserted_id), **appart.model_dump()}
@@ -846,12 +904,13 @@ async def update_appartement(appart_id: str, appart: AppartementUpdate, current_
     if not update_data:
         raise HTTPException(status_code=400, detail="Aucune donnée à mettre à jour")
     
-    existing = await db.appartements.find_one({"_id": ObjectId(appart_id)})
+    existing = await db.appartements.find_one({"_id": ObjectId(appart_id), **SOFT_DELETE_FILTER})
     if not existing:
         raise HTTPException(status_code=404, detail="Appartement non trouvé")
     
     old_client_id = existing.get("client_id")
     new_client_id = appart.client_id
+    old_vals = {k: existing.get(k) for k in update_data.keys() if existing.get(k) != update_data.get(k)}
     
     # Assigning a client to apartment
     if new_client_id and new_client_id != "none" and new_client_id != old_client_id:
@@ -901,17 +960,25 @@ async def update_appartement(appart_id: str, appart: AppartementUpdate, current_
     )
     
     await manager.broadcast({"type": "appartement_updated", "data": {"id": appart_id}})
+    await audit_log(current_user, "UPDATE", "appartement", appart_id, existing.get("numero_lot", ""), old_values=old_vals, new_values=update_data)
     return {"id": appart_id, **update_data}
 
 @api_router.delete("/appartements/{appart_id}")
 async def delete_appartement(appart_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.appartements.delete_one({"_id": ObjectId(appart_id)})
-    if result.deleted_count == 0:
+    existing = await db.appartements.find_one({"_id": ObjectId(appart_id), **SOFT_DELETE_FILTER})
+    if not existing:
         raise HTTPException(status_code=404, detail="Appartement non trouvé")
-    
+    await db.appartements.update_one(
+        {"_id": ObjectId(appart_id)},
+        {"$set": {
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": current_user["_id"],
+            "deleted_by_name": current_user.get("name", current_user.get("email", ""))
+        }}
+    )
+    await audit_log(current_user, "DELETE", "appartement", appart_id, existing.get("numero_lot", ""))
     await manager.broadcast({"type": "appartement_deleted", "data": {"id": appart_id}})
-    
-    return {"message": "Appartement supprimé"}
+    return {"message": "Appartement déplacé dans la corbeille"}
 
 # ============ RESERVATIONS HISTORY ============
 @api_router.get("/reservations")
@@ -933,11 +1000,11 @@ async def get_reservations(current_user: dict = Depends(get_current_user)):
     return result
 @api_router.get("/dashboard")
 async def get_dashboard(current_user: dict = Depends(get_current_user)):
-    total_clients = await db.clients.count_documents({})
-    total_appartements = await db.appartements.count_documents({})
-    apparts_disponibles = await db.appartements.count_documents({"statut": "disponible"})
-    apparts_reserves = await db.appartements.count_documents({"statut": "réservé"})
-    apparts_vendus = await db.appartements.count_documents({"statut": "vendu"})
+    total_clients = await db.clients.count_documents(SOFT_DELETE_FILTER)
+    total_appartements = await db.appartements.count_documents(SOFT_DELETE_FILTER)
+    apparts_disponibles = await db.appartements.count_documents({"statut": "disponible", **SOFT_DELETE_FILTER})
+    apparts_reserves = await db.appartements.count_documents({"statut": "réservé", **SOFT_DELETE_FILTER})
+    apparts_vendus = await db.appartements.count_documents({"statut": "vendu", **SOFT_DELETE_FILTER})
     
     clients_nouveau = await db.clients.count_documents({"statut": "nouveau"})
     clients_interesse = await db.clients.count_documents({"statut": "intéressé"})
@@ -954,7 +1021,7 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
     whatsapp_leads = await db.clients.count_documents({"source": "whatsapp"})
     
     recent_clients = []
-    async for c in db.clients.find({}).sort("created_at", -1).limit(5):
+    async for c in db.clients.find(SOFT_DELETE_FILTER).sort("created_at", -1).limit(5):
         recent_clients.append({
             "id": str(c["_id"]),
             "nom": c.get("nom", ""),
@@ -1112,7 +1179,7 @@ async def generate_whatsapp_ai_response(phone: str, message: str) -> str:
             residences.append(r.get("nom", ""))
         
         appartements = []
-        async for a in db.appartements.find({"statut": "disponible"}):
+        async for a in db.appartements.find({"statut": "disponible", **SOFT_DELETE_FILTER}):
             appartements.append({
                 "type": a.get("type_appart", ""),
                 "prix": a.get("prix", 0),
@@ -1259,7 +1326,7 @@ async def export_clients_excel(current_user: dict = Depends(get_current_user)):
     ws.append(headers)
     
     # Data
-    async for c in db.clients.find({}):
+    async for c in db.clients.find(SOFT_DELETE_FILTER):
         ws.append([
             c.get("nom", ""),
             c.get("telephone", ""),
@@ -1305,7 +1372,7 @@ async def export_appartements_excel(current_user: dict = Depends(get_current_use
     ws.append(headers)
     
     # Data
-    async for a in db.appartements.find({}):
+    async for a in db.appartements.find(SOFT_DELETE_FILTER):
         ws.append([
             a.get("numero_lot", ""),
             a.get("bloc", ""),
@@ -1346,7 +1413,7 @@ async def export_clients_pdf(current_user: dict = Depends(get_current_user)):
     # Table data
     data = [["Nom", "Téléphone", "Statut", "Température"]]
     
-    async for c in db.clients.find({}):
+    async for c in db.clients.find(SOFT_DELETE_FILTER):
         data.append([
             c.get("nom", "")[:20],
             c.get("telephone", ""),
@@ -1387,7 +1454,7 @@ async def export_prospects_excel(current_user: dict = Depends(get_current_user))
     headers = ["Nom", "Téléphone 1", "Téléphone 2", "Email", "Ville", "Quartier", "Type Logement", "Étage Souhaité", "Nb Pièces", "Budget Min", "Budget Max", "Mode Paiement", "Objectif", "Situation", "Source", "Notes", "Date création"]
     ws.append(headers)
     
-    async for p in db.prospects.find({}):
+    async for p in db.prospects.find(SOFT_DELETE_FILTER):
         ws.append([
             p.get("nom", ""),
             p.get("telephone", ""),
@@ -1432,7 +1499,7 @@ async def export_prospects_pdf(current_user: dict = Depends(get_current_user)):
     elements.append(Spacer(1, 0.5*cm))
     
     data = [["Nom", "Téléphone", "Ville", "Quartier", "Type", "Source"]]
-    async for p in db.prospects.find({}).sort("created_at", -1):
+    async for p in db.prospects.find(SOFT_DELETE_FILTER).sort("created_at", -1):
         data.append([
             p.get("nom", "")[:20],
             p.get("telephone", ""),
@@ -1491,6 +1558,123 @@ async def websocket_endpoint(websocket: WebSocket):
             await manager.broadcast({"type": "message", "data": data})
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+# ============ AUDIT LOG ROUTES ============
+@api_router.get("/audit-logs")
+async def get_audit_logs(
+    action: str = None, entity_type: str = None, user_id: str = None,
+    date_from: str = None, date_to: str = None, search: str = None,
+    limit: int = 200,
+    current_user: dict = Depends(get_current_user)
+):
+    query = {}
+    if action:
+        query["action"] = action
+    if entity_type:
+        query["entity_type"] = entity_type
+    if user_id:
+        query["user_id"] = user_id
+    if date_from:
+        query["timestamp"] = query.get("timestamp", {})
+        query["timestamp"]["$gte"] = date_from
+    if date_to:
+        query["timestamp"] = query.get("timestamp", {})
+        query["timestamp"]["$lte"] = date_to
+    if search:
+        query["$or"] = [
+            {"entity_name": {"$regex": search, "$options": "i"}},
+            {"user_name": {"$regex": search, "$options": "i"}},
+        ]
+    
+    result = []
+    async for log in db.audit_logs.find(query, {"_id": 0}).sort("timestamp", -1).limit(limit):
+        result.append(log)
+    return result
+
+# ============ TRASH / CORBEILLE ROUTES ============
+@api_router.get("/trash")
+async def get_trash(current_user: dict = Depends(get_current_user)):
+    """Get all soft-deleted items across collections."""
+    result = []
+    
+    async for c in db.clients.find({"deleted_at": {"$ne": None}}).sort("deleted_at", -1):
+        result.append({
+            "id": str(c["_id"]),
+            "entity_type": "client",
+            "entity_name": c.get("nom", ""),
+            "deleted_at": c.get("deleted_at", ""),
+            "deleted_by": c.get("deleted_by", ""),
+            "deleted_by_name": c.get("deleted_by_name", ""),
+            "data": {k: v for k, v in c.items() if k not in ("_id", "deleted_at", "deleted_by", "deleted_by_name")}
+        })
+    
+    async for p in db.prospects.find({"deleted_at": {"$ne": None}}).sort("deleted_at", -1):
+        result.append({
+            "id": str(p["_id"]),
+            "entity_type": "prospect",
+            "entity_name": p.get("nom", ""),
+            "deleted_at": p.get("deleted_at", ""),
+            "deleted_by": p.get("deleted_by", ""),
+            "deleted_by_name": p.get("deleted_by_name", ""),
+            "data": {k: v for k, v in p.items() if k not in ("_id", "deleted_at", "deleted_by", "deleted_by_name")}
+        })
+    
+    async for a in db.appartements.find({"deleted_at": {"$ne": None}}).sort("deleted_at", -1):
+        result.append({
+            "id": str(a["_id"]),
+            "entity_type": "appartement",
+            "entity_name": f"Lot {a.get('numero_lot', '')} Bloc {a.get('bloc', '')}",
+            "deleted_at": a.get("deleted_at", ""),
+            "deleted_by": a.get("deleted_by", ""),
+            "deleted_by_name": a.get("deleted_by_name", ""),
+            "data": {k: v for k, v in a.items() if k not in ("_id", "deleted_at", "deleted_by", "deleted_by_name")}
+        })
+    
+    result.sort(key=lambda x: x.get("deleted_at", ""), reverse=True)
+    return result
+
+@api_router.post("/trash/{entity_type}/{entity_id}/restore")
+async def restore_from_trash(entity_type: str, entity_id: str, current_user: dict = Depends(get_current_user)):
+    """Restore a soft-deleted item."""
+    collection_map = {"client": "clients", "prospect": "prospects", "appartement": "appartements"}
+    collection_name = collection_map.get(entity_type)
+    if not collection_name:
+        raise HTTPException(status_code=400, detail="Type d'entité invalide")
+    
+    collection = db[collection_name]
+    existing = await collection.find_one({"_id": ObjectId(entity_id), "deleted_at": {"$ne": None}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Élément non trouvé dans la corbeille")
+    
+    await collection.update_one(
+        {"_id": ObjectId(entity_id)},
+        {"$set": {"deleted_at": None, "deleted_by": None, "deleted_by_name": None}}
+    )
+    
+    await audit_log(current_user, "RESTORE", entity_type, entity_id, existing.get("nom", existing.get("numero_lot", "")))
+    await manager.broadcast({"type": f"{entity_type}_restored", "data": {"id": entity_id}})
+    return {"message": "Élément restauré avec succès"}
+
+@api_router.delete("/trash/{entity_type}/{entity_id}/permanent")
+async def permanent_delete(entity_type: str, entity_id: str, current_user: dict = Depends(get_current_user)):
+    """Permanently delete an item - ADMIN ONLY."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Seul l'admin peut supprimer définitivement")
+    
+    collection_map = {"client": "clients", "prospect": "prospects", "appartement": "appartements"}
+    collection_name = collection_map.get(entity_type)
+    if not collection_name:
+        raise HTTPException(status_code=400, detail="Type d'entité invalide")
+    
+    collection = db[collection_name]
+    existing = await collection.find_one({"_id": ObjectId(entity_id), "deleted_at": {"$ne": None}})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Élément non trouvé dans la corbeille")
+    
+    await collection.delete_one({"_id": ObjectId(entity_id)})
+    
+    await audit_log(current_user, "PERMANENT_DELETE", entity_type, entity_id, existing.get("nom", existing.get("numero_lot", "")))
+    return {"message": "Élément supprimé définitivement"}
 
 # ============ ADMIN SEED ENDPOINT ============
 @api_router.post("/admin/seed")

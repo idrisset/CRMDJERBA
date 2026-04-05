@@ -14,6 +14,8 @@ import { Appartements } from "./pages/Appartements";
 import { WhatsApp } from "./pages/WhatsApp";
 import { Parametres } from "./pages/Parametres";
 import { Prospects } from "./pages/Prospects";
+import { AuditLog } from "./pages/AuditLog";
+import { Corbeille } from "./pages/Corbeille";
 import { Toaster } from "./components/ui/sonner";
 
 function App() {
@@ -75,6 +77,26 @@ function App() {
                   <ProtectedRoute>
                     <Layout>
                       <Prospects />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/audit-log"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <AuditLog />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/corbeille"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <Corbeille />
                     </Layout>
                   </ProtectedRoute>
                 }

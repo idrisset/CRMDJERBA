@@ -13,7 +13,9 @@ import {
   WifiOff,
   User,
   Globe,
-  Database
+  Database,
+  Shield,
+  Trash2
 } from 'lucide-react';
 import { Button } from './ui/button';
 import {
@@ -48,6 +50,8 @@ export function Layout({ children }) {
     { to: '/clients', icon: Users, label: t('clients') },
     { to: '/appartements', icon: Building2, label: t('apartments') },
     { to: '/prospects', icon: Database, label: t('prospects') },
+    { to: '/audit-log', icon: Shield, label: t('auditLog') },
+    { to: '/corbeille', icon: Trash2, label: t('trash') },
     { to: '/whatsapp', icon: MessageSquare, label: t('whatsapp') },
   ];
 
