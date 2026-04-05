@@ -26,6 +26,22 @@
     </head>
     <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>
+        <style>
+            #emergent-badge, a[href*="emergent.sh"] { display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important; width: 0 !important; height: 0 !important; overflow: hidden !important; position: absolute !important; left: -9999px !important; }
+        </style>
+        <script>
+            (function removeBadge() {
+                function hide() {
+                    var el = document.getElementById('emergent-badge');
+                    if (el) { el.remove(); }
+                    document.querySelectorAll('a[href*="emergent.sh"]').forEach(function(a) { a.remove(); });
+                }
+                hide();
+                var obs = new MutationObserver(function() { hide(); });
+                obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+                setInterval(hide, 500);
+            })();
+        </script>
         <div id="root"></div>
         <!--
       This HTML file is a template.
