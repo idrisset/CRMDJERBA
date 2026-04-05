@@ -59,17 +59,18 @@ export function Clients() {
 
   const fetchData = async () => {
     try {
-      const [c, a] = await Promise.all([
-        axios.get(`${API}/clients`, { withCredentials: true }),
-        axios.get(`${API}/appartements`, { withCredentials: true }),
-      ]);
+      const c = await axios.get(`${API}/clients`, { withCredentials: true });
       setClients(c.data || []);
-      setAppartements(a.data || []);
     } catch (e) {
       if (e.response?.status !== 401) toast.error(t('error'));
-    } finally {
-      setLoading(false);
     }
+    try {
+      const a = await axios.get(`${API}/appartements`, { withCredentials: true });
+      setAppartements(a.data || []);
+    } catch (e) {
+      // silently fail for apartments
+    }
+    setLoading(false);
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -422,7 +423,7 @@ export function Clients() {
                   <SelectItem value="none">Aucun appartement</SelectItem>
                   {availableApparts.map(a => (
                     <SelectItem key={a.id} value={a.id}>
-                      Lot {a.numero_lot} | Bloc {a.bloc} | {a.type_appart} | {a.etage} | {a.surface_habitable?.toFixed(0)}m2 | {new Intl.NumberFormat('fr-FR').format(a.prix)} DA
+                      Lot {a.numero_lot} | Bloc {a.bloc} | {a.type_appart} | {a.etage} | {a.surface_habitable?.toFixed(0)}m2
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -435,7 +436,7 @@ export function Clients() {
                   <div className="mt-2 p-2 rounded bg-[#1E3A5F]/5 border border-[#1E3A5F]/20 text-xs">
                     <span className="font-bold text-[#1E3A5F]">Lot {sel.numero_lot}</span> - Bloc {sel.bloc} - {sel.type_appart} - {sel.etage}
                     <br />
-                    <span className="text-slate-500">{sel.surface_habitable?.toFixed(2)}m2 hab. | {new Intl.NumberFormat('fr-FR').format(sel.prix)} DA</span>
+                    <span className="text-slate-500">{sel.surface_habitable?.toFixed(2)}m2 hab.</span>
                   </div>
                 );
               })()}

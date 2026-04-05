@@ -76,7 +76,7 @@ export function Appartements() {
       setResidences(r.data || []);
       setClients(c.data || []);
     } catch (e) {
-      if (e.response?.status !== 401) toast.error(t('error'));
+      if (e.response?.status !== 401) console.error('Fetch error:', e);
     } finally {
       setLoading(false);
     }
@@ -302,7 +302,6 @@ export function Appartements() {
                 <TableHead className="text-white text-xs font-medium">Etage</TableHead>
                 <TableHead className="text-white text-xs font-medium text-right">Surface Hab.</TableHead>
                 <TableHead className="text-white text-xs font-medium text-right">Surface Utile</TableHead>
-                <TableHead className="text-white text-xs font-medium text-right">Prix</TableHead>
                 <TableHead className="text-white text-xs font-medium text-center">Statut</TableHead>
                 <TableHead className="text-white text-xs font-medium">Client</TableHead>
                 <TableHead className="text-white text-xs font-medium w-[70px]"></TableHead>
@@ -318,7 +317,6 @@ export function Appartements() {
                   <TableCell className="text-xs text-slate-600">{a.etage}</TableCell>
                   <TableCell className="text-xs text-right font-mono">{a.surface_habitable?.toFixed(2)} m²</TableCell>
                   <TableCell className="text-xs text-right font-mono">{a.surface_utile?.toFixed(2)} m²</TableCell>
-                  <TableCell className="text-xs text-right font-medium">{formatPrice(a.prix)}</TableCell>
                   <TableCell className="text-center">{getStatusBadge(a.statut)}</TableCell>
                   <TableCell className="text-xs">{a.client_id ? <span className="text-[#C41E3A] font-medium">{getClientName(a.client_id)}</span> : <span className="text-slate-300">-</span>}</TableCell>
                   <TableCell>
@@ -412,10 +410,6 @@ export function Appartements() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">{t('price')} (DA)</Label>
-                <Input type="number" value={formData.prix} onChange={e => setFormData({ ...formData, prix: e.target.value })} className="h-9" data-testid="appart-prix" />
-              </div>
               <div className="space-y-1">
                 <Label className="text-xs">{t('status')}</Label>
                 <Select value={formData.statut} onValueChange={v => setFormData({ ...formData, statut: v })}>

@@ -65,7 +65,7 @@ export function Prospects() {
       setProspects(pRes.data || []);
       setAnalytics(aRes.data || null);
     } catch (e) {
-      if (e.response?.status !== 401) toast.error(t('error'));
+      if (e.response?.status !== 401) console.error('Fetch error:', e);
     } finally {
       setLoading(false);
     }
