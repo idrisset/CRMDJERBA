@@ -124,6 +124,16 @@ const translations = {
     source: 'Source',
     analytics: 'Analytique',
 
+    // Password
+    changePassword: 'Changer le mot de passe',
+    changePasswordDesc: 'Modifiez votre mot de passe de connexion',
+    currentPassword: 'Mot de passe actuel',
+    newPassword: 'Nouveau mot de passe',
+    confirmPassword: 'Confirmer le nouveau mot de passe',
+    passwordChanged: 'Mot de passe modifié avec succès',
+    passwordMismatch: 'Les mots de passe ne correspondent pas',
+    passwordTooShort: 'Le mot de passe doit contenir au moins 6 caractères',
+
     // Audit Log & Trash
     auditLog: "Journal d'activité",
     trash: 'Corbeille',
@@ -284,6 +294,16 @@ const translations = {
     source: 'المصدر',
     analytics: 'التحليلات',
 
+    // Password
+    changePassword: 'تغيير كلمة المرور',
+    changePasswordDesc: 'تغيير كلمة مرور تسجيل الدخول',
+    currentPassword: 'كلمة المرور الحالية',
+    newPassword: 'كلمة المرور الجديدة',
+    confirmPassword: 'تأكيد كلمة المرور الجديدة',
+    passwordChanged: 'تم تغيير كلمة المرور بنجاح',
+    passwordMismatch: 'كلمات المرور غير متطابقة',
+    passwordTooShort: 'يجب أن تحتوي كلمة المرور على 6 أحرف على الأقل',
+
     // Audit Log & Trash
     auditLog: 'سجل النشاط',
     trash: 'سلة المحذوفات',
@@ -443,6 +463,16 @@ const translations = {
     paymentMethod: 'Payment Method',
     source: 'Source',
     analytics: 'Analytics',
+
+    // Password
+    changePassword: 'Change Password',
+    changePasswordDesc: 'Change your login password',
+    currentPassword: 'Current Password',
+    newPassword: 'New Password',
+    confirmPassword: 'Confirm New Password',
+    passwordChanged: 'Password changed successfully',
+    passwordMismatch: 'Passwords do not match',
+    passwordTooShort: 'Password must be at least 6 characters',
 
     // Audit Log & Trash
     auditLog: 'Activity Log',

@@ -1559,6 +1559,32 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+# ============ CHANGE PASSWORD ============
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+@api_router.put("/auth/change-password")
+async def change_password(req: ChangePasswordRequest, current_user: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"_id": ObjectId(current_user["_id"])})
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    
+    if not verify_password(req.current_password, user.get("password_hash", "")):
+        raise HTTPException(status_code=400, detail="Mot de passe actuel incorrect")
+    
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit contenir au moins 6 caractères")
+    
+    new_hash = hash_password(req.new_password)
+    await db.users.update_one(
+        {"_id": ObjectId(current_user["_id"])},
+        {"$set": {"password_hash": new_hash}}
+    )
+    
+    await audit_log(current_user, "UPDATE", "session", current_user["_id"], current_user.get("name", ""), new_values={"password": "***modifié***"})
+    return {"message": "Mot de passe modifié avec succès"}
+
 # ============ AUDIT LOG ROUTES ============
 @api_router.get("/audit-logs")
 async def get_audit_logs(

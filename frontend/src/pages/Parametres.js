@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from '../components/ui/dialog';
 import { Textarea } from '../components/ui/textarea';
-import { Plus, Pencil, Trash2, Building2, Loader2, Users, Bell, Mail, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Building2, Loader2, Users, Bell, Mail, X, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -30,6 +30,10 @@ export function Parametres() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingResidence, setEditingResidence] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  // Password change
+  const [passwordData, setPasswordData] = useState({ current_password: '', new_password: '', confirm_password: '' });
+  const [savingPassword, setSavingPassword] = useState(false);
 
   // Notification settings
   const [notifSettings, setNotifSettings] = useState({
@@ -145,6 +149,31 @@ export function Parametres() {
       toast.error(t('error'));
     } finally {
       setSavingNotif(false);
+    }
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (passwordData.new_password !== passwordData.confirm_password) {
+      toast.error(t('passwordMismatch'));
+      return;
+    }
+    if (passwordData.new_password.length < 6) {
+      toast.error(t('passwordTooShort'));
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      await axios.put(`${API}/auth/change-password`, {
+        current_password: passwordData.current_password,
+        new_password: passwordData.new_password,
+      });
+      toast.success(t('passwordChanged'));
+      setPasswordData({ current_password: '', new_password: '', confirm_password: '' });
+    } catch (e) {
+      toast.error(e.response?.data?.detail || t('error'));
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -303,6 +332,57 @@ export function Parametres() {
               </Button>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Change Password Section */}
+      <Card className="card-luxury">
+        <CardHeader>
+          <CardTitle className="text-xl font-medium text-[#1E3A5F] font-['Outfit'] flex items-center gap-2">
+            <Lock className="h-5 w-5" />
+            {t('changePassword')}
+          </CardTitle>
+          <CardDescription>{t('changePasswordDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
+            <div className="space-y-2">
+              <Label className="text-sm">{t('currentPassword')}</Label>
+              <Input
+                type="password"
+                value={passwordData.current_password}
+                onChange={e => setPasswordData({ ...passwordData, current_password: e.target.value })}
+                required
+                data-testid="current-password"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">{t('newPassword')}</Label>
+              <Input
+                type="password"
+                value={passwordData.new_password}
+                onChange={e => setPasswordData({ ...passwordData, new_password: e.target.value })}
+                required
+                minLength={6}
+                data-testid="new-password"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">{t('confirmPassword')}</Label>
+              <Input
+                type="password"
+                value={passwordData.confirm_password}
+                onChange={e => setPasswordData({ ...passwordData, confirm_password: e.target.value })}
+                required
+                minLength={6}
+                data-testid="confirm-password"
+              />
+            </div>
+            <Button type="submit" className="bg-[#C41E3A] hover:bg-[#9A152C]" disabled={savingPassword} data-testid="save-password-btn">
+              {savingPassword ? <Loader2 className="h-4 w-4 animate-spin me-2" /> : <Lock className="h-4 w-4 me-2" />}
+              {t('changePassword')}
+            </Button>
+          </form>
         </CardContent>
       </Card>
 
