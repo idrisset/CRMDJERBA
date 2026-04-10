@@ -83,6 +83,26 @@ export function Sauvegardes() {
     }
   };
 
+  const handleDownload = (backupId) => {
+    const token = localStorage.getItem('token');
+    const url = `${API}/backups/${backupId}/download`;
+    const a = document.createElement('a');
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => {
+        if (!res.ok) throw new Error('Erreur téléchargement');
+        return res.blob();
+      })
+      .then(blob => {
+        const href = URL.createObjectURL(blob);
+        a.href = href;
+        a.download = `${backupId}.zip`;
+        a.click();
+        URL.revokeObjectURL(href);
+        toast.success('Téléchargement démarré');
+      })
+      .catch(() => toast.error('Erreur lors du téléchargement'));
+  };
+
   const formatDate = (iso) => {
     if (!iso) return '-';
     const d = new Date(iso);
@@ -271,16 +291,28 @@ export function Sauvegardes() {
                       <TableCell>
                         <div className="flex gap-1">
                           {b.status === 'success' && b.exists !== false && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                              onClick={() => setRestoreTarget(b)}
-                              data-testid={`restore-${b.backup_id}`}
-                            >
-                              <RotateCcw className="h-3 w-3 me-1" />
-                              Restaurer
-                            </Button>
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50"
+                                onClick={() => handleDownload(b.backup_id)}
+                                data-testid={`download-${b.backup_id}`}
+                              >
+                                <Download className="h-3 w-3 me-1" />
+                                ZIP
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                                onClick={() => setRestoreTarget(b)}
+                                data-testid={`restore-${b.backup_id}`}
+                              >
+                                <RotateCcw className="h-3 w-3 me-1" />
+                                Restaurer
+                              </Button>
+                            </>
                           )}
                           <Button
                             variant="ghost"

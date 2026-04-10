@@ -2178,7 +2178,32 @@ async def delete_backup_endpoint(backup_id: str, current_user: dict = Depends(ge
     await audit_log(current_user, "DELETE_BACKUP", "system", backup_id, f"Deleted backup {backup_id}")
     return {"message": "Sauvegarde supprimée"}
 
-@api_router.get("/backups/stats")
+@api_router.get("/backups/{backup_id}/download")
+async def download_backup(backup_id: str, current_user: dict = Depends(get_current_user)):
+    """Download a backup as ZIP - Super Admin only"""
+    require_role(current_user, min_level=3)
+    
+    backup_path = backup_manager.get_backup_path(backup_id)
+    if not os.path.isdir(backup_path):
+        raise HTTPException(status_code=404, detail="Sauvegarde non trouvée")
+    
+    import zipfile
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for dirpath, dirnames, filenames in os.walk(backup_path):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                arcname = os.path.relpath(filepath, backup_path)
+                zf.write(filepath, arcname)
+    
+    zip_buffer.seek(0)
+    await audit_log(current_user, "DOWNLOAD_BACKUP", "system", backup_id, f"Downloaded {backup_id}")
+    
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={backup_id}.zip"}
+    )
 async def get_backup_stats(current_user: dict = Depends(get_current_user)):
     """Get backup statistics"""
     require_role(current_user, min_level=3)
