@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -17,6 +18,7 @@ export function Dashboard() {
   const [seeding, setSeeding] = useState(false);
   const { lastMessage } = useWebSocket();
   const { t } = useLanguage();
+  const navigate = useNavigate();
 
   const fetchStats = async () => {
     try {
@@ -33,15 +35,8 @@ export function Dashboard() {
     }
   };
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  useEffect(() => {
-    if (lastMessage) {
-      fetchStats();
-    }
-  }, [lastMessage]);
+  useEffect(() => { fetchStats(); }, []);
+  useEffect(() => { if (lastMessage) fetchStats(); }, [lastMessage]);
 
   if (loading) {
     return (
@@ -66,42 +61,48 @@ export function Dashboard() {
     }
   };
 
+  // Clickable cards navigate to filtered pages
   const statCards = [
     {
       title: t('totalClients'),
       value: stats?.total_clients || 0,
       icon: Users,
       color: 'text-[#1E3A5F]',
-      bg: 'bg-blue-50'
+      bg: 'bg-blue-50',
+      onClick: () => navigate('/clients'),
     },
     {
       title: t('availableApts'),
       value: stats?.logements_disponibles || stats?.appartements_disponibles || 0,
       icon: Building2,
       color: 'text-emerald-600',
-      bg: 'bg-emerald-50'
+      bg: 'bg-emerald-50',
+      onClick: () => navigate('/appartements?statut=disponible'),
     },
     {
       title: t('reservedApts'),
       value: stats?.logements_reserves || stats?.appartements_reserves || 0,
       icon: Calendar,
       color: 'text-amber-600',
-      bg: 'bg-amber-50'
+      bg: 'bg-amber-50',
+      onClick: () => navigate('/appartements?statut=réservé'),
     },
     {
       title: t('soldApts'),
       value: stats?.logements_vendus || stats?.appartements_vendus || 0,
       icon: TrendingUp,
       color: 'text-slate-600',
-      bg: 'bg-slate-100'
+      bg: 'bg-slate-100',
+      onClick: () => navigate('/appartements?statut=vendu'),
     },
     {
       title: t('whatsappLeads'),
       value: stats?.whatsapp_leads || 0,
       icon: MessageSquare,
       color: 'text-green-600',
-      bg: 'bg-green-50'
-    }
+      bg: 'bg-green-50',
+      onClick: () => navigate('/whatsapp'),
+    },
   ];
 
   const clientStatuses = [
@@ -109,7 +110,7 @@ export function Dashboard() {
     { key: 'intéressé', label: t('interested'), color: 'bg-violet-100 text-violet-800 border-violet-200' },
     { key: 'visite', label: t('visit'), color: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
     { key: 'réservé', label: t('reserved'), color: 'bg-amber-100 text-amber-800 border-amber-200' },
-    { key: 'vendu', label: t('sold'), color: 'bg-slate-200 text-slate-700 border-slate-300' }
+    { key: 'vendu', label: t('sold'), color: 'bg-slate-200 text-slate-700 border-slate-300' },
   ];
 
   return (
@@ -139,10 +140,15 @@ export function Dashboard() {
         </Card>
       )}
 
-      {/* Stats Grid */}
+      {/* Clickable Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 stagger-fade-in">
         {statCards.map((stat) => (
-          <Card key={stat.title} className="card-luxury" data-testid={`stat-${stat.title.toLowerCase().replace(/\s/g, '-')}`}>
+          <Card
+            key={stat.title}
+            className="card-luxury cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
+            onClick={stat.onClick}
+            data-testid={`stat-${stat.title.toLowerCase().replace(/\s/g, '-')}`}
+          >
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -158,7 +164,7 @@ export function Dashboard() {
         ))}
       </div>
 
-      {/* Blocs EDIMCO */}
+      {/* Blocs EDIMCO - Clickable */}
       <Card className="card-luxury" data-testid="blocs-edimco">
         <CardHeader>
           <CardTitle className="text-lg font-medium text-[#1E3A5F] font-['Outfit'] flex items-center gap-2">
@@ -176,15 +182,17 @@ export function Dashboard() {
               const vendu = bs.vendu || 0;
               const pct = total > 0 ? Math.round(((reserve + vendu) / total) * 100) : 0;
               return (
-                <div key={bloc} className="rounded-lg border border-slate-200 p-3 text-center hover:shadow-md transition-shadow">
+                <div
+                  key={bloc}
+                  className="rounded-lg border border-slate-200 p-3 text-center hover:shadow-md hover:border-[#1E3A5F] transition-all cursor-pointer"
+                  onClick={() => navigate(`/appartements?bloc=${bloc}`)}
+                  data-testid={`bloc-${bloc}`}
+                >
                   <div className="text-lg font-bold text-[#1E3A5F] font-['Outfit']">Bloc {bloc}</div>
                   <div className="text-2xl font-light text-slate-800 mt-1">{total}</div>
                   <div className="text-xs text-slate-500 mb-2">logements</div>
                   <div className="w-full bg-slate-100 rounded-full h-1.5 mb-2">
-                    <div
-                      className="h-1.5 rounded-full bg-gradient-to-r from-emerald-400 to-[#1E3A5F]"
-                      style={{ width: `${pct}%` }}
-                    />
+                    <div className="h-1.5 rounded-full bg-gradient-to-r from-emerald-400 to-[#1E3A5F]" style={{ width: `${pct}%` }} />
                   </div>
                   <div className="flex justify-center gap-2 text-xs">
                     <span className="text-emerald-600">{dispo}</span>
@@ -199,7 +207,7 @@ export function Dashboard() {
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Clients par statut */}
+        {/* Clients par statut - clickable */}
         <Card className="card-luxury" data-testid="clients-by-status">
           <CardHeader>
             <CardTitle className="text-lg font-medium text-[#1E3A5F] font-['Outfit']">{t('clientsByStatus')}</CardTitle>
@@ -207,7 +215,12 @@ export function Dashboard() {
           <CardContent>
             <div className="space-y-3">
               {clientStatuses.map((status) => (
-                <div key={status.key} className="flex items-center justify-between p-3 rounded bg-slate-50">
+                <div
+                  key={status.key}
+                  className="flex items-center justify-between p-3 rounded bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                  onClick={() => navigate(`/clients?statut=${status.key}`)}
+                  data-testid={`status-link-${status.key}`}
+                >
                   <Badge className={`${status.color} border`}>{status.label}</Badge>
                   <span className="text-xl font-light text-slate-900">
                     {stats?.clients_par_statut?.[status.key] || 0}
@@ -231,12 +244,8 @@ export function Dashboard() {
                     <div>
                       <p className="font-medium text-slate-900">{client.nom}</p>
                       <div className="flex items-center gap-2 mt-1">
-                        {client.source === 'whatsapp' && (
-                          <MessageSquare className="h-3 w-3 text-green-500" />
-                        )}
-                        <p className="text-xs text-slate-500">
-                          {new Date(client.created_at).toLocaleDateString('fr-FR')}
-                        </p>
+                        {client.source === 'whatsapp' && <MessageSquare className="h-3 w-3 text-green-500" />}
+                        <p className="text-xs text-slate-500">{new Date(client.created_at).toLocaleDateString('fr-FR')}</p>
                       </div>
                     </div>
                     <Badge className={
@@ -280,7 +289,7 @@ export function Dashboard() {
                     </Badge>
                     <div>
                       <span className="text-sm font-medium">{r.client_nom || 'Client'}</span>
-                      <span className="text-xs text-slate-400 mx-2">→</span>
+                      <span className="text-xs text-slate-400 mx-2">&rarr;</span>
                       <span className="text-xs font-mono text-[#1E3A5F] font-bold">Lot {r.numero_lot}</span>
                       <span className="text-xs text-slate-500"> Bloc {r.bloc} - {r.type_appart}</span>
                     </div>

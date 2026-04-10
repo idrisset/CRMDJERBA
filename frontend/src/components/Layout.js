@@ -15,7 +15,9 @@ import {
   Globe,
   Database,
   Shield,
-  Trash2
+  Trash2,
+  ShieldCheck,
+  Copy
 } from 'lucide-react';
 import { Button } from './ui/button';
 import {
@@ -50,12 +52,18 @@ export function Layout({ children }) {
     { to: '/clients', icon: Users, label: t('clients') },
     { to: '/appartements', icon: Building2, label: t('apartments') },
     { to: '/prospects', icon: Database, label: t('prospects') },
+    { to: '/doublons', icon: Copy, label: t('duplicates') },
     { to: '/audit-log', icon: Shield, label: t('auditLog') },
     { to: '/corbeille', icon: Trash2, label: t('trash') },
     { to: '/whatsapp', icon: MessageSquare, label: t('whatsapp') },
   ];
 
-  if (user?.role === 'admin') {
+  // Admin-only nav items
+  const perms = user?.permissions;
+  if (perms?.can_manage_users || user?.role === 'super_admin' || user?.role === 'admin') {
+    navItems.push({ to: '/admin', icon: ShieldCheck, label: t('administration') });
+  }
+  if (perms?.level >= 2 || user?.role === 'super_admin' || user?.role === 'admin') {
     navItems.push({ to: '/parametres', icon: Settings, label: t('settings') });
   }
 
@@ -99,7 +107,11 @@ export function Layout({ children }) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-white truncate">{user?.name || user?.email}</p>
-              <p className="text-xs text-slate-400 capitalize">{user?.role === 'admin' ? t('admin') : t('commercial')}</p>
+              <p className="text-xs text-slate-400 capitalize">{
+                user?.role === 'super_admin' || user?.role === 'admin' ? t('superAdmin') :
+                user?.role === 'admin_limited' ? t('adminLimited') :
+                t('userRole')
+              }</p>
             </div>
           </div>
           

@@ -103,6 +103,9 @@ ROLES = {
 SENSITIVE_ACTIONS = ["delete_client", "delete_appartement", "delete_prospect", "modify_price", "cancel_reservation", "permanent_delete"]
 
 def get_permissions(role: str) -> dict:
+    # Backward compat: old "admin" role maps to super_admin
+    if role == "admin":
+        role = "super_admin"
     return ROLES.get(role, ROLES["user"])
 
 def require_role(user: dict, min_level: int = 1):
@@ -542,7 +545,12 @@ async def logout(request: Request):
 
 @api_router.get("/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
-    return current_user
+    role = current_user.get("role", "user")
+    perms = get_permissions(role)
+    return {
+        **{k: v for k, v in current_user.items() if k != "password_hash"},
+        "permissions": perms
+    }
 
 @api_router.post("/auth/refresh")
 async def refresh_token(request: Request):
@@ -796,7 +804,7 @@ async def delete_client(client_id: str, current_user: dict = Depends(get_current
     
     # If user needs approval for deletion
     if perms["needs_approval"]:
-        await db.approval_requests.insert_one({
+        approval_doc = {
             "requester_id": current_user["_id"],
             "requester_name": current_user.get("name", current_user.get("email", "")),
             "requester_role": current_user.get("role", "user"),
@@ -807,9 +815,11 @@ async def delete_client(client_id: str, current_user: dict = Depends(get_current
             "details": {"reference": existing.get("reference", ""), "telephone": existing.get("telephone", "")},
             "status": "pending",
             "created_at": datetime.now(timezone.utc).isoformat()
-        })
+        }
+        await db.approval_requests.insert_one(approval_doc)
         await audit_log(current_user, "APPROVAL_REQUEST", "client", client_id, existing.get("nom", ""), new_values={"action": "delete_client"})
         await manager.broadcast({"type": "approval_request_created"})
+        asyncio.create_task(send_approval_notification_to_admins(approval_doc))
         return {"message": "Demande d'approbation envoyée au Super Administrateur", "approval_required": True}
     
     # Release all apartments
@@ -853,8 +863,7 @@ async def get_residences(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/residences")
 async def create_residence(residence: ResidenceCreate, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Seul l'admin peut créer des résidences")
+    require_role(current_user, min_level=2)
     
     residence_doc = {
         **residence.model_dump(),
@@ -868,8 +877,7 @@ async def create_residence(residence: ResidenceCreate, current_user: dict = Depe
 
 @api_router.put("/residences/{residence_id}")
 async def update_residence(residence_id: str, residence: ResidenceUpdate, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Seul l'admin peut modifier les résidences")
+    require_role(current_user, min_level=2)
     
     update_data = {k: v for k, v in residence.model_dump().items() if v is not None}
     if not update_data:
@@ -889,8 +897,7 @@ async def update_residence(residence_id: str, residence: ResidenceUpdate, curren
 
 @api_router.delete("/residences/{residence_id}")
 async def delete_residence(residence_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Seul l'admin peut supprimer des résidences")
+    require_role(current_user, min_level=3)
     
     result = await db.residences.delete_one({"_id": ObjectId(residence_id)})
     if result.deleted_count == 0:
@@ -1486,8 +1493,7 @@ async def get_whatsapp_conversations(current_user: dict = Depends(get_current_us
 # ============ SETTINGS ROUTES ============
 @api_router.get("/settings/notifications")
 async def get_notification_settings(current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Accès réservé à l'admin")
+    require_role(current_user, min_level=2)
     
     settings = await db.settings.find_one({"type": "notifications"})
     if not settings:
@@ -1500,8 +1506,7 @@ async def get_notification_settings(current_user: dict = Depends(get_current_use
 
 @api_router.put("/settings/notifications")
 async def update_notification_settings(settings: NotificationSettings, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Accès réservé à l'admin")
+    require_role(current_user, min_level=3)
     
     await db.settings.update_one(
         {"type": "notifications"},
@@ -1737,8 +1742,7 @@ async def export_prospects_pdf(current_user: dict = Depends(get_current_user)):
 # ============ USERS ROUTES (Admin only) ============
 @api_router.get("/users")
 async def get_users(current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Accès réservé à l'admin")
+    require_role(current_user, min_level=3)
     
     result = []
     async for u in db.users.find({}, {"password_hash": 0}):
@@ -1746,12 +1750,362 @@ async def get_users(current_user: dict = Depends(get_current_user)):
             "id": str(u["_id"]),
             "email": u.get("email", ""),
             "name": u.get("name", ""),
-            "role": u.get("role", "commercial"),
+            "role": u.get("role", "user"),
+            "is_active": u.get("is_active", True),
             "created_at": u.get("created_at", "")
         })
     return result
 
-# ============ WEBSOCKET ============
+@api_router.post("/users")
+async def create_user(user: UserRegister, current_user: dict = Depends(get_current_user)):
+    """Create a new user - Super Admin only"""
+    require_role(current_user, min_level=3)
+    
+    if user.role not in ROLES:
+        raise HTTPException(status_code=400, detail="Rôle invalide")
+    
+    existing = await db.users.find_one({"email": user.email.lower()})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email déjà utilisé")
+    
+    user_doc = {
+        "email": user.email.lower(),
+        "password_hash": hash_password(user.password),
+        "name": user.name,
+        "role": user.role,
+        "is_active": True,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.users.insert_one(user_doc)
+    await audit_log(current_user, "CREATE", "user", str(result.inserted_id), user.name, new_values={"email": user.email, "role": user.role})
+    return {"id": str(result.inserted_id), "email": user.email, "name": user.name, "role": user.role}
+
+@api_router.put("/users/{user_id}")
+async def update_user(user_id: str, user_update: UserUpdate, current_user: dict = Depends(get_current_user)):
+    """Update a user - Super Admin only"""
+    require_role(current_user, min_level=3)
+    
+    update_data = {k: v for k, v in user_update.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="Aucune donnée")
+    
+    if "role" in update_data and update_data["role"] not in ROLES:
+        raise HTTPException(status_code=400, detail="Rôle invalide")
+    
+    existing = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update_data})
+    await audit_log(current_user, "UPDATE", "user", user_id, existing.get("name", ""), new_values=update_data)
+    return {"id": user_id, **update_data}
+
+@api_router.delete("/users/{user_id}")
+async def deactivate_user(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Deactivate a user - Super Admin only"""
+    require_role(current_user, min_level=3)
+    
+    if user_id == current_user["_id"]:
+        raise HTTPException(status_code=400, detail="Impossible de désactiver votre propre compte")
+    
+    existing = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Utilisateur non trouvé")
+    
+    await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"is_active": False}})
+    await audit_log(current_user, "DELETE", "user", user_id, existing.get("name", ""))
+    return {"message": "Utilisateur désactivé"}
+
+# ============ APPROVAL REQUESTS ============
+@api_router.get("/approvals")
+async def get_approvals(status: str = None, current_user: dict = Depends(get_current_user)):
+    """List approval requests"""
+    perms = get_permissions(current_user.get("role", "user"))
+    query = {}
+    if status:
+        query["status"] = status
+    # Non-super admins can only see their own requests
+    if not perms.get("can_approve"):
+        query["requester_id"] = current_user["_id"]
+    
+    result = []
+    async for a in db.approval_requests.find(query).sort("created_at", -1):
+        result.append({
+            "id": str(a["_id"]),
+            "requester_id": a.get("requester_id", ""),
+            "requester_name": a.get("requester_name", ""),
+            "requester_role": a.get("requester_role", ""),
+            "action": a.get("action", ""),
+            "entity_type": a.get("entity_type", ""),
+            "entity_id": a.get("entity_id", ""),
+            "entity_name": a.get("entity_name", ""),
+            "details": a.get("details", {}),
+            "status": a.get("status", "pending"),
+            "reviewed_by": a.get("reviewed_by", ""),
+            "reviewed_at": a.get("reviewed_at", ""),
+            "created_at": a.get("created_at", "")
+        })
+    return result
+
+@api_router.get("/approvals/count")
+async def get_approval_count(current_user: dict = Depends(get_current_user)):
+    """Get count of pending approvals"""
+    perms = get_permissions(current_user.get("role", "user"))
+    if not perms.get("can_approve"):
+        return {"count": 0}
+    count = await db.approval_requests.count_documents({"status": "pending"})
+    return {"count": count}
+
+@api_router.post("/approvals/{approval_id}/approve")
+async def approve_request(approval_id: str, current_user: dict = Depends(get_current_user)):
+    """Approve a pending request - Super Admin only"""
+    require_role(current_user, min_level=3)
+    
+    approval = await db.approval_requests.find_one({"_id": ObjectId(approval_id), "status": "pending"})
+    if not approval:
+        raise HTTPException(status_code=404, detail="Demande non trouvée ou déjà traitée")
+    
+    # Execute the approved action
+    action = approval.get("action", "")
+    entity_type = approval.get("entity_type", "")
+    entity_id = approval.get("entity_id", "")
+    
+    if action == "delete_client":
+        existing = await db.clients.find_one({"_id": ObjectId(entity_id), **SOFT_DELETE_FILTER})
+        if existing:
+            appart_ids = existing.get("appartement_ids") or []
+            if not appart_ids and existing.get("appartement_id"):
+                appart_ids = [existing["appartement_id"]]
+            for aid in appart_ids:
+                try:
+                    await db.appartements.update_one({"_id": ObjectId(aid)}, {"$set": {"statut": "disponible", "client_id": None}})
+                except Exception:
+                    pass
+            await db.clients.update_one({"_id": ObjectId(entity_id)}, {"$set": {"deleted_at": datetime.now(timezone.utc).isoformat(), "deleted_by": current_user["_id"], "deleted_by_name": current_user.get("name", "")}})
+            await audit_log(current_user, "DELETE", "client", entity_id, existing.get("nom", ""), new_values={"approved_from": approval_id})
+    elif action == "delete_appartement":
+        existing = await db.appartements.find_one({"_id": ObjectId(entity_id), **SOFT_DELETE_FILTER})
+        if existing:
+            await db.appartements.update_one({"_id": ObjectId(entity_id)}, {"$set": {"deleted_at": datetime.now(timezone.utc).isoformat(), "deleted_by": current_user["_id"]}})
+            await audit_log(current_user, "DELETE", "appartement", entity_id, existing.get("numero_lot", ""), new_values={"approved_from": approval_id})
+    elif action == "delete_prospect":
+        existing = await db.prospects.find_one({"_id": ObjectId(entity_id), **SOFT_DELETE_FILTER})
+        if existing:
+            await db.prospects.update_one({"_id": ObjectId(entity_id)}, {"$set": {"deleted_at": datetime.now(timezone.utc).isoformat(), "deleted_by": current_user["_id"]}})
+            await audit_log(current_user, "DELETE", "prospect", entity_id, existing.get("nom", ""), new_values={"approved_from": approval_id})
+    
+    # Mark as approved
+    await db.approval_requests.update_one(
+        {"_id": ObjectId(approval_id)},
+        {"$set": {"status": "approved", "reviewed_by": current_user.get("name", current_user.get("email", "")), "reviewed_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    await audit_log(current_user, "APPROVE", "approval", approval_id, approval.get("entity_name", ""))
+    await manager.broadcast({"type": "approval_processed"})
+    
+    # Send email notification to requester
+    try:
+        requester = await db.users.find_one({"_id": ObjectId(approval.get("requester_id"))})
+        if requester and requester.get("email"):
+            await send_approval_email(requester["email"], approval, "approved", current_user.get("name", ""))
+    except Exception:
+        pass
+    
+    return {"message": "Demande approuvée et action exécutée"}
+
+@api_router.post("/approvals/{approval_id}/reject")
+async def reject_request(approval_id: str, current_user: dict = Depends(get_current_user)):
+    """Reject a pending request - Super Admin only"""
+    require_role(current_user, min_level=3)
+    
+    approval = await db.approval_requests.find_one({"_id": ObjectId(approval_id), "status": "pending"})
+    if not approval:
+        raise HTTPException(status_code=404, detail="Demande non trouvée ou déjà traitée")
+    
+    await db.approval_requests.update_one(
+        {"_id": ObjectId(approval_id)},
+        {"$set": {"status": "rejected", "reviewed_by": current_user.get("name", current_user.get("email", "")), "reviewed_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    await audit_log(current_user, "REJECT", "approval", approval_id, approval.get("entity_name", ""))
+    await manager.broadcast({"type": "approval_processed"})
+    
+    # Send email notification to requester
+    try:
+        requester = await db.users.find_one({"_id": ObjectId(approval.get("requester_id"))})
+        if requester and requester.get("email"):
+            await send_approval_email(requester["email"], approval, "rejected", current_user.get("name", ""))
+    except Exception:
+        pass
+    
+    return {"message": "Demande rejetée"}
+
+async def send_approval_email(to_email: str, approval: dict, decision: str, reviewer_name: str):
+    """Send approval decision email via Resend"""
+    try:
+        if not resend.api_key:
+            return
+        action_label = {"delete_client": "Suppression client", "delete_appartement": "Suppression appartement", "delete_prospect": "Suppression prospect", "modify_price": "Modification prix"}.get(approval.get("action", ""), approval.get("action", ""))
+        status_label = "Approuvée" if decision == "approved" else "Rejetée"
+        status_color = "#22c55e" if decision == "approved" else "#ef4444"
+        
+        html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #1E3A5F; color: white; padding: 20px; text-align: center;">
+                <h1 style="margin: 0; font-size: 20px;">DJERBA CONSTRUCTION</h1>
+            </div>
+            <div style="padding: 20px; background: #f8f9fa;">
+                <h2 style="color: {status_color};">Demande {status_label}</h2>
+                <p><strong>Action:</strong> {action_label}</p>
+                <p><strong>Élément:</strong> {approval.get('entity_name', '')}</p>
+                <p><strong>Décision par:</strong> {reviewer_name}</p>
+                <p style="color: #666; font-size: 12px; margin-top: 20px;">CRM DJERBA CONSTRUCTION - EDIMCO</p>
+            </div>
+        </div>
+        """
+        params = {"from": SENDER_EMAIL, "to": [to_email], "subject": f"Demande {status_label} - {action_label}", "html": html}
+        await asyncio.to_thread(resend.Emails.send, params)
+    except Exception as e:
+        logger.error(f"Approval email error: {e}")
+
+async def send_approval_notification_to_admins(approval_doc: dict):
+    """Notify super admins about new approval request"""
+    try:
+        if not resend.api_key:
+            return
+        notification_email = os.environ.get("NOTIFICATION_EMAIL", "")
+        if not notification_email:
+            return
+        
+        action_label = {"delete_client": "Suppression client", "delete_appartement": "Suppression appartement", "delete_prospect": "Suppression prospect"}.get(approval_doc.get("action", ""), approval_doc.get("action", ""))
+        
+        html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #1E3A5F; color: white; padding: 20px; text-align: center;">
+                <h1 style="margin: 0; font-size: 20px;">DJERBA CONSTRUCTION</h1>
+            </div>
+            <div style="padding: 20px; background: #f8f9fa;">
+                <h2 style="color: #C41E3A;">Nouvelle demande d'approbation</h2>
+                <p><strong>Demandeur:</strong> {approval_doc.get('requester_name', '')}</p>
+                <p><strong>Action:</strong> {action_label}</p>
+                <p><strong>Élément:</strong> {approval_doc.get('entity_name', '')}</p>
+                <p><strong>Détails:</strong> {json.dumps(approval_doc.get('details', {}), ensure_ascii=False)}</p>
+                <a href="{os.environ.get('FRONTEND_URL', '')}/admin" style="display: inline-block; background: #C41E3A; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 16px;">Voir dans le CRM</a>
+                <p style="color: #666; font-size: 12px; margin-top: 20px;">CRM DJERBA CONSTRUCTION - EDIMCO</p>
+            </div>
+        </div>
+        """
+        params = {"from": SENDER_EMAIL, "to": [notification_email], "subject": f"Approbation requise: {action_label} - {approval_doc.get('entity_name', '')}", "html": html}
+        await asyncio.to_thread(resend.Emails.send, params)
+    except Exception as e:
+        logger.error(f"Admin notification email error: {e}")
+
+# ============ DUPLICATE CLIENTS ============
+@api_router.get("/clients/duplicates")
+async def get_duplicate_clients(current_user: dict = Depends(get_current_user)):
+    """Find all potential duplicate clients"""
+    require_role(current_user, min_level=2)
+    
+    clients_list = []
+    async for c in db.clients.find(SOFT_DELETE_FILTER):
+        clients_list.append({
+            "id": str(c["_id"]),
+            "reference": c.get("reference", ""),
+            "nom": c.get("nom", ""),
+            "telephone": c.get("telephone", ""),
+            "telephone2": c.get("telephone2", ""),
+            "email": c.get("email", ""),
+            "statut": c.get("statut", ""),
+            "created_at": c.get("created_at", ""),
+            "appartement_ids": c.get("appartement_ids", []),
+        })
+    
+    # Find duplicates by phone or name
+    groups = {}
+    for c in clients_list:
+        keys = []
+        if c["telephone"]:
+            keys.append(f"tel:{c['telephone']}")
+        if c.get("telephone2"):
+            keys.append(f"tel:{c['telephone2']}")
+        if c["nom"]:
+            keys.append(f"nom:{c['nom'].lower().strip()}")
+        if c.get("email"):
+            keys.append(f"email:{c['email'].lower().strip()}")
+        
+        for key in keys:
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(c)
+    
+    # Collect groups with >1 client
+    seen_pairs = set()
+    duplicate_groups = []
+    for key, members in groups.items():
+        if len(members) > 1:
+            ids = tuple(sorted(m["id"] for m in members))
+            if ids not in seen_pairs:
+                seen_pairs.add(ids)
+                reason = key.split(":")[0]
+                duplicate_groups.append({
+                    "reason": reason,
+                    "match_value": key.split(":", 1)[1],
+                    "clients": members
+                })
+    
+    return {"groups": duplicate_groups, "total": len(duplicate_groups)}
+
+@api_router.post("/clients/merge/{keep_id}/{merge_id}")
+async def merge_clients_action(keep_id: str, merge_id: str, current_user: dict = Depends(get_current_user)):
+    """Merge merge_id into keep_id"""
+    require_role(current_user, min_level=3)
+    
+    keep = await db.clients.find_one({"_id": ObjectId(keep_id), **SOFT_DELETE_FILTER})
+    merge = await db.clients.find_one({"_id": ObjectId(merge_id), **SOFT_DELETE_FILTER})
+    
+    if not keep or not merge:
+        raise HTTPException(status_code=404, detail="Client non trouvé")
+    
+    # Merge data: keep existing values, fill blanks from merge
+    update_fields = {}
+    for field in ["telephone2", "email", "salaire", "budget_min", "budget_max", "objectif", "mode_paiement", "etage_souhaite", "situation_familiale"]:
+        if not keep.get(field) and merge.get(field):
+            update_fields[field] = merge[field]
+    
+    # Merge notes
+    if merge.get("notes"):
+        existing_notes = keep.get("notes", "") or ""
+        update_fields["notes"] = f"{existing_notes}\n[Fusionné de {merge.get('reference', merge_id)}]: {merge['notes']}".strip()
+    
+    # Merge apartment IDs
+    keep_apts = set(keep.get("appartement_ids") or [])
+    merge_apts = set(merge.get("appartement_ids") or [])
+    if merge.get("appartement_id"):
+        merge_apts.add(merge["appartement_id"])
+    combined_apts = list(keep_apts | merge_apts)
+    update_fields["appartement_ids"] = combined_apts
+    
+    # Transfer apartments ownership
+    for aid in merge_apts - keep_apts:
+        try:
+            await db.appartements.update_one({"_id": ObjectId(aid)}, {"$set": {"client_id": keep_id}})
+        except Exception:
+            pass
+    
+    # Update reservations
+    await db.reservations.update_many({"client_id": merge_id}, {"$set": {"client_id": keep_id}})
+    
+    # Apply updates to kept client
+    if update_fields:
+        update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.clients.update_one({"_id": ObjectId(keep_id)}, {"$set": update_fields})
+    
+    # Soft delete merged client
+    await db.clients.update_one({"_id": ObjectId(merge_id)}, {"$set": {"deleted_at": datetime.now(timezone.utc).isoformat(), "deleted_by": current_user["_id"], "deleted_by_name": f"Fusionné → {keep.get('reference', keep_id)}"}})
+    
+    await audit_log(current_user, "MERGE", "client", keep_id, keep.get("nom", ""), old_values={"merged_from": merge_id, "merged_reference": merge.get("reference", "")}, new_values=update_fields)
+    await manager.broadcast({"type": "client_updated", "data": {"id": keep_id}})
+    
+    return {"message": f"Client fusionné avec succès", "kept_id": keep_id, "merged_id": merge_id}
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -1886,9 +2240,8 @@ async def restore_from_trash(entity_type: str, entity_id: str, current_user: dic
 
 @api_router.delete("/trash/{entity_type}/{entity_id}/permanent")
 async def permanent_delete(entity_type: str, entity_id: str, current_user: dict = Depends(get_current_user)):
-    """Permanently delete an item - ADMIN ONLY."""
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Seul l'admin peut supprimer définitivement")
+    """Permanently delete an item - SUPER ADMIN ONLY."""
+    require_role(current_user, min_level=3)
     
     collection_map = {"client": "clients", "prospect": "prospects", "appartement": "appartements"}
     collection_name = collection_map.get(entity_type)
@@ -1908,9 +2261,8 @@ async def permanent_delete(entity_type: str, entity_id: str, current_user: dict 
 # ============ ADMIN SEED ENDPOINT ============
 @api_router.post("/admin/seed")
 async def admin_seed_edimco(current_user: dict = Depends(get_current_user)):
-    """Force seed EDIMCO apartments - admin only"""
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin uniquement")
+    """Force seed EDIMCO apartments - super admin only"""
+    require_role(current_user, min_level=3)
     
     apparts_count = await db.appartements.count_documents({})
     if apparts_count > 0:
@@ -1998,6 +2350,7 @@ async def startup_event():
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@immo.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     
+    # Also migrate existing "admin" role to "super_admin"
     existing = await db.users.find_one({"email": admin_email})
     if existing is None:
         hashed = hash_password(admin_password)
@@ -2005,16 +2358,21 @@ async def startup_event():
             "email": admin_email,
             "password_hash": hashed,
             "name": "Administrateur",
-            "role": "admin",
+            "role": "super_admin",
+            "is_active": True,
             "created_at": datetime.now(timezone.utc).isoformat()
         })
         logger.info(f"Admin user created: {admin_email}")
-    elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one(
-            {"email": admin_email},
-            {"$set": {"password_hash": hash_password(admin_password)}}
-        )
-        logger.info(f"Admin password updated: {admin_email}")
+    else:
+        if existing.get("role") == "admin":
+            await db.users.update_one({"email": admin_email}, {"$set": {"role": "super_admin"}})
+            logger.info(f"Migrated admin role to super_admin: {admin_email}")
+        if not verify_password(admin_password, existing["password_hash"]):
+            await db.users.update_one(
+                {"email": admin_email},
+                {"$set": {"password_hash": hash_password(admin_password)}}
+            )
+            logger.info(f"Admin password updated: {admin_email}")
     
     # Seed EDIMCO residence
     try:

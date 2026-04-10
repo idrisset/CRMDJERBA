@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from '../components/ui/button';
@@ -16,7 +18,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
 import { Textarea } from '../components/ui/textarea';
-import { Plus, Pencil, Trash2, Search, Loader2, FileSpreadsheet, FileText, MessageSquare, Home } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Loader2, FileSpreadsheet, FileText, Home, AlertTriangle, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
@@ -27,6 +29,7 @@ const ETAGES = ['Etage 02', 'Etage 03', 'Etage 04', 'Etage 05', 'Etage 06', 'Eta
 const SITUATIONS = ['Célibataire', 'Marié(e)', 'Divorcé(e)', 'Veuf/Veuve', 'En couple'];
 
 export function Clients() {
+  const { user } = useAuth();
   const [clients, setClients] = useState([]);
   const [appartements, setAppartements] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,8 +38,16 @@ export function Clients() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
   const { lastMessage } = useWebSocket();
   const { t } = useLanguage();
+  const [searchParams] = useSearchParams();
+
+  // Read filter from URL params (from dashboard click)
+  useEffect(() => {
+    const statut = searchParams.get('statut');
+    if (statut) setStatusFilter(statut);
+  }, [searchParams]);
 
   const CLIENT_STATUSES = [
     { value: 'nouveau', label: t('new'), color: 'bg-blue-100 text-blue-800 border-blue-200' },
@@ -51,7 +62,7 @@ export function Clients() {
     salaire: '', budget_min: '', budget_max: '',
     objectif: '', mode_paiement: '', etage_souhaite: '',
     situation_familiale: '', notes: '', statut: 'nouveau',
-    appartement_id: '',
+    appartement_ids: [],
   };
 
   const [formData, setFormData] = useState(emptyForm);
@@ -59,16 +70,14 @@ export function Clients() {
 
   const fetchData = async () => {
     try {
-      const c = await axios.get(`${API}/clients`);
+      const [c, a] = await Promise.all([
+        axios.get(`${API}/clients`),
+        axios.get(`${API}/appartements`),
+      ]);
       setClients(c.data || []);
-    } catch (e) {
-      console.error('Clients fetch error:', e?.response?.status, e?.response?.data, e?.message);
-    }
-    try {
-      const a = await axios.get(`${API}/appartements`);
       setAppartements(a.data || []);
     } catch (e) {
-      console.error('Appartements fetch error:', e?.message);
+      console.error('Fetch error:', e);
     }
     setLoading(false);
   };
@@ -79,26 +88,27 @@ export function Clients() {
   }, [lastMessage]);
 
   const availableApparts = useMemo(() => {
+    const selectedIds = formData.appartement_ids || [];
     let apparts = appartements.filter(a =>
       a.destination === 'Logement' &&
-      (a.statut === 'disponible' || a.id === formData.appartement_id)
+      (a.statut === 'disponible' || selectedIds.includes(a.id))
     );
     if (appartTypeFilter !== 'Tous') {
       apparts = apparts.filter(a => a.type_appart === appartTypeFilter);
     }
     return apparts.sort((a, b) => parseInt(a.numero_lot || 0) - parseInt(b.numero_lot || 0));
-  }, [appartements, formData.appartement_id, appartTypeFilter]);
+  }, [appartements, formData.appartement_ids, appartTypeFilter]);
 
   const appartTypes = useMemo(() => {
     const types = [...new Set(appartements.filter(a => a.destination === 'Logement').map(a => a.type_appart))];
     return types.sort();
   }, [appartements]);
 
-  const getAppartInfo = (id) => id ? appartements.find(a => a.id === id) : null;
-
   const openDialog = (client = null) => {
+    setDuplicateWarning(null);
     if (client) {
       setEditingClient(client);
+      const ids = client.appartement_ids?.length > 0 ? client.appartement_ids : (client.appartement_id ? [client.appartement_id] : []);
       setFormData({
         nom: client.nom || '', telephone: client.telephone || '',
         telephone2: client.telephone2 || '', email: client.email || '',
@@ -109,7 +119,7 @@ export function Clients() {
         etage_souhaite: client.etage_souhaite || '',
         situation_familiale: client.situation_familiale || '',
         notes: client.notes || '', statut: client.statut || 'nouveau',
-        appartement_id: client.appartement_id || '',
+        appartement_ids: ids,
       });
     } else {
       setEditingClient(null);
@@ -119,29 +129,53 @@ export function Clients() {
     setIsDialogOpen(true);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const addAppartement = (apId) => {
+    if (apId && apId !== 'none' && !formData.appartement_ids.includes(apId)) {
+      setFormData({ ...formData, appartement_ids: [...formData.appartement_ids, apId] });
+    }
+  };
+
+  const removeAppartement = (apId) => {
+    setFormData({ ...formData, appartement_ids: formData.appartement_ids.filter(id => id !== apId) });
+  };
+
+  const handleSubmit = async (e, forceCreate = false) => {
+    e?.preventDefault();
     setSaving(true);
     const payload = {
       ...formData,
       salaire: formData.salaire ? parseFloat(formData.salaire) : null,
       budget_min: formData.budget_min ? parseFloat(formData.budget_min) : null,
       budget_max: formData.budget_max ? parseFloat(formData.budget_max) : null,
-      appartement_id: formData.appartement_id && formData.appartement_id !== 'none' ? formData.appartement_id : null,
+      appartement_ids: formData.appartement_ids.filter(id => id && id !== 'none'),
       situation_familiale: formData.situation_familiale && formData.situation_familiale !== 'none' ? formData.situation_familiale : null,
       objectif: formData.objectif && formData.objectif !== 'none' ? formData.objectif : null,
       mode_paiement: formData.mode_paiement && formData.mode_paiement !== 'none' ? formData.mode_paiement : null,
       etage_souhaite: formData.etage_souhaite && formData.etage_souhaite !== 'none' ? formData.etage_souhaite : null,
       telephone2: formData.telephone2 || null,
+      force_create: forceCreate,
     };
     try {
+      let res;
       if (editingClient) {
-        await axios.put(`${API}/clients/${editingClient.id}`, payload);
+        res = await axios.put(`${API}/clients/${editingClient.id}`, payload);
       } else {
-        await axios.post(`${API}/clients`, payload);
+        res = await axios.post(`${API}/clients`, payload);
       }
-      toast.success(t('success'));
+      // Check for duplicate warning
+      if (res.data?.needs_confirmation) {
+        setDuplicateWarning(res.data.duplicates);
+        setSaving(false);
+        return;
+      }
+      // Check for approval required
+      if (res.data?.approval_required) {
+        toast.info(t('approvalRequired'));
+      } else {
+        toast.success(t('success'));
+      }
       setIsDialogOpen(false);
+      setDuplicateWarning(null);
       fetchData();
     } catch (e) {
       toast.error(e.response?.data?.detail || t('error'));
@@ -153,17 +187,23 @@ export function Clients() {
   const handleDelete = async (id) => {
     if (!window.confirm(t('confirm') + '?')) return;
     try {
-      await axios.delete(`${API}/clients/${id}`);
-      toast.success(t('success'));
+      const res = await axios.delete(`${API}/clients/${id}`);
+      if (res.data?.approval_required) {
+        toast.info(t('approvalRequired'));
+      } else {
+        toast.success(t('success'));
+      }
       fetchData();
     } catch (e) {
-      toast.error(t('error'));
+      toast.error(e.response?.data?.detail || t('error'));
     }
   };
 
   const filteredClients = clients.filter((c) => {
     const matchSearch = c.nom?.toLowerCase().includes(search.toLowerCase()) ||
-      c.telephone?.includes(search) || c.telephone2?.includes(search) || c.email?.toLowerCase().includes(search.toLowerCase());
+      c.telephone?.includes(search) || c.telephone2?.includes(search) ||
+      c.email?.toLowerCase().includes(search.toLowerCase()) ||
+      c.reference?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'all' || c.statut === statusFilter;
     return matchSearch && matchStatus;
   });
@@ -172,8 +212,6 @@ export function Clients() {
     const st = CLIENT_STATUSES.find(x => x.value === s);
     return st ? <Badge className={`${st.color} border text-xs`}>{st.label}</Badge> : <Badge className="text-xs">{s}</Badge>;
   };
-
-  const formatDA = (v) => v ? new Intl.NumberFormat('fr-FR').format(v) + ' DA' : '';
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-[#1E3A5F]" /></div>;
 
@@ -219,6 +257,7 @@ export function Clients() {
         <Table>
           <TableHeader>
             <TableRow className="bg-[#1E3A5F]">
+              <TableHead className="text-white text-xs font-medium w-[60px]">{t('reference')}</TableHead>
               <TableHead className="text-white text-xs font-medium">{t('name')}</TableHead>
               <TableHead className="text-white text-xs font-medium">{t('phone')}</TableHead>
               <TableHead className="text-white text-xs font-medium">Objectif</TableHead>
@@ -230,16 +269,14 @@ export function Clients() {
           </TableHeader>
           <TableBody>
             {filteredClients.length > 0 ? filteredClients.map(client => {
-              const appart = getAppartInfo(client.appartement_id);
+              const apInfos = client.appartements_info || [];
               return (
                 <TableRow key={client.id} className="hover:bg-slate-50" data-testid={`client-row-${client.id}`}>
                   <TableCell>
-                    <div>
-                      <span className="font-medium text-sm">{client.nom}</span>
-                      {client.objectif && (
-                        <span className="text-xs text-slate-400 ms-1.5">({client.objectif})</span>
-                      )}
-                    </div>
+                    <span className="font-mono text-xs font-bold text-[#1E3A5F]">{client.reference || '-'}</span>
+                  </TableCell>
+                  <TableCell>
+                    <span className="font-medium text-sm">{client.nom}</span>
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">{client.telephone}</div>
@@ -259,12 +296,16 @@ export function Clients() {
                   </TableCell>
                   <TableCell>{getStatusBadge(client.statut)}</TableCell>
                   <TableCell>
-                    {appart ? (
-                      <div className="flex items-center gap-1">
-                        <Home className="h-3 w-3 text-[#1E3A5F]" />
-                        <span className="text-xs font-medium text-[#1E3A5F]">
-                          Lot {appart.numero_lot} - {appart.bloc} - {appart.type_appart}
-                        </span>
+                    {apInfos.length > 0 ? (
+                      <div className="space-y-0.5">
+                        {apInfos.map(ap => (
+                          <div key={ap.id} className="flex items-center gap-1">
+                            <Home className="h-3 w-3 text-[#1E3A5F]" />
+                            <span className="text-xs font-medium text-[#1E3A5F]">
+                              Lot {ap.numero_lot} - {ap.bloc}
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     ) : <span className="text-slate-300 text-xs">-</span>}
                   </TableCell>
@@ -282,7 +323,7 @@ export function Clients() {
               );
             }) : (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-10 text-slate-400">{t('noClients')}</TableCell>
+                <TableCell colSpan={8} className="text-center py-10 text-slate-400">{t('noClients')}</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -299,14 +340,36 @@ export function Clients() {
             <DialogDescription>{editingClient ? t('edit') : t('create')}</DialogDescription>
           </DialogHeader>
 
+          {/* Duplicate Warning */}
+          {duplicateWarning && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3" data-testid="duplicate-warning">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <span className="font-medium text-sm text-amber-800">Doublons potentiels détectés !</span>
+              </div>
+              <div className="space-y-1 mb-3">
+                {duplicateWarning.map(d => (
+                  <div key={d.id} className="text-xs text-amber-700 bg-white p-2 rounded border border-amber-200">
+                    <span className="font-medium">{d.nom}</span> - {d.telephone} 
+                    <span className="text-amber-500 ms-1">(Similitude: {d.reasons.join(', ')})</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="text-xs" onClick={() => { setDuplicateWarning(null); setIsDialogOpen(false); }}>Annuler</Button>
+                <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-xs" onClick={(e) => handleSubmit(e, true)} data-testid="force-create-btn">
+                  Créer quand même
+                </Button>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-3">
-            {/* Nom */}
             <div className="space-y-1">
               <Label className="text-xs">{t('name')} *</Label>
               <Input value={formData.nom} onChange={e => setFormData({...formData, nom: e.target.value})} required className="h-9" data-testid="client-nom" />
             </div>
 
-            {/* Telephones */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">{t('phone')} 1 *</Label>
@@ -318,13 +381,11 @@ export function Clients() {
               </div>
             </div>
 
-            {/* Email */}
             <div className="space-y-1">
               <Label className="text-xs">{t('email')}</Label>
               <Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="h-9" data-testid="client-email" />
             </div>
 
-            {/* Statut + Situation */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">{t('status')}</Label>
@@ -347,7 +408,6 @@ export function Clients() {
               </div>
             </div>
 
-            {/* Objectif */}
             <div className="space-y-1">
               <Label className="text-xs">Objectif</Label>
               <Select value={formData.objectif || 'none'} onValueChange={v => setFormData({...formData, objectif: v === 'none' ? '' : v})}>
@@ -359,7 +419,6 @@ export function Clients() {
               </Select>
             </div>
 
-            {/* Salaire + Mode paiement */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">{t('salary')} (DA)</Label>
@@ -377,7 +436,6 @@ export function Clients() {
               </div>
             </div>
 
-            {/* Budget min/max */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Budget min (DA)</Label>
@@ -389,7 +447,6 @@ export function Clients() {
               </div>
             </div>
 
-            {/* Etage souhaité */}
             <div className="space-y-1">
               <Label className="text-xs">Etage souhaité</Label>
               <Select value={formData.etage_souhaite || 'none'} onValueChange={v => setFormData({...formData, etage_souhaite: v === 'none' ? '' : v})}>
@@ -401,11 +458,14 @@ export function Clients() {
               </Select>
             </div>
 
-            {/* Appartement EDIMCO */}
+            {/* Multi-Apartment Selection */}
             <div className="space-y-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
               <div className="flex items-center gap-2 mb-2">
                 <Home className="h-4 w-4 text-[#1E3A5F]" />
-                <Label className="text-xs font-semibold text-[#1E3A5F]">Appartement EDIMCO</Label>
+                <Label className="text-xs font-semibold text-[#1E3A5F]">Appartements EDIMCO</Label>
+                {formData.appartement_ids.length > 0 && (
+                  <Badge className="bg-[#1E3A5F] text-white text-xs">{formData.appartement_ids.length}</Badge>
+                )}
               </div>
               
               <div className="flex gap-1 mb-2 flex-wrap">
@@ -417,11 +477,11 @@ export function Clients() {
                 ))}
               </div>
 
-              <Select value={formData.appartement_id || 'none'} onValueChange={v => setFormData({...formData, appartement_id: v === 'none' ? '' : v})}>
-                <SelectTrigger className="h-9 bg-white" data-testid="client-appartement"><SelectValue placeholder="Aucun" /></SelectTrigger>
+              {/* Add apartment selector */}
+              <Select value="" onValueChange={addAppartement}>
+                <SelectTrigger className="h-9 bg-white" data-testid="client-add-appartement"><SelectValue placeholder="Ajouter un appartement..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Aucun appartement</SelectItem>
-                  {availableApparts.map(a => (
+                  {availableApparts.filter(a => !formData.appartement_ids.includes(a.id)).map(a => (
                     <SelectItem key={a.id} value={a.id}>
                       Lot {a.numero_lot} | Bloc {a.bloc} | {a.type_appart} | {a.etage} | {a.surface_habitable?.toFixed(0)}m2
                     </SelectItem>
@@ -429,20 +489,28 @@ export function Clients() {
                 </SelectContent>
               </Select>
 
-              {formData.appartement_id && formData.appartement_id !== 'none' && (() => {
-                const sel = appartements.find(a => a.id === formData.appartement_id);
-                if (!sel) return null;
-                return (
-                  <div className="mt-2 p-2 rounded bg-[#1E3A5F]/5 border border-[#1E3A5F]/20 text-xs">
-                    <span className="font-bold text-[#1E3A5F]">Lot {sel.numero_lot}</span> - Bloc {sel.bloc} - {sel.type_appart} - {sel.etage}
-                    <br />
-                    <span className="text-slate-500">{sel.surface_habitable?.toFixed(2)}m2 hab.</span>
-                  </div>
-                );
-              })()}
+              {/* Selected apartments list */}
+              {formData.appartement_ids.length > 0 && (
+                <div className="space-y-1 mt-2">
+                  {formData.appartement_ids.map(apId => {
+                    const sel = appartements.find(a => a.id === apId);
+                    if (!sel) return null;
+                    return (
+                      <div key={apId} className="flex items-center justify-between p-2 rounded bg-[#1E3A5F]/5 border border-[#1E3A5F]/20">
+                        <span className="text-xs">
+                          <span className="font-bold text-[#1E3A5F]">Lot {sel.numero_lot}</span> - Bloc {sel.bloc} - {sel.type_appart} - {sel.etage}
+                          <span className="text-slate-500 ms-1">({sel.surface_habitable?.toFixed(0)}m2)</span>
+                        </span>
+                        <button type="button" onClick={() => removeAppartement(apId)} className="text-red-400 hover:text-red-600">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* Notes */}
             <div className="space-y-1">
               <Label className="text-xs">{t('notes')}</Label>
               <Textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} rows={2} className="text-sm" data-testid="client-notes" />

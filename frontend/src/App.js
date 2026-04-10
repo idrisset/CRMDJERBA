@@ -16,6 +16,8 @@ import { Parametres } from "./pages/Parametres";
 import { Prospects } from "./pages/Prospects";
 import { AuditLog } from "./pages/AuditLog";
 import { Corbeille } from "./pages/Corbeille";
+import { Admin } from "./pages/Admin";
+import { ClientsEnDouble } from "./pages/ClientsEnDouble";
 import { Toaster } from "./components/ui/sonner";
 
 function App() {
@@ -107,6 +109,26 @@ function App() {
                   <ProtectedRoute>
                     <Layout>
                       <Parametres />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <Admin />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/doublons"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <ClientsEnDouble />
                     </Layout>
                   </ProtectedRoute>
                 }

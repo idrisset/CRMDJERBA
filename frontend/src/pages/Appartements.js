@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -50,8 +51,18 @@ export function Appartements() {
 
   const [activeTab, setActiveTab] = useState('F2');
   const [filterBloc, setFilterBloc] = useState('Tous');
+  const [filterStatut, setFilterStatut] = useState('Tous');
   const [searchLot, setSearchLot] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchParams] = useSearchParams();
+
+  // Apply filters from URL (dashboard clicks)
+  useEffect(() => {
+    const bloc = searchParams.get('bloc');
+    const statut = searchParams.get('statut');
+    if (bloc) setFilterBloc(bloc);
+    if (statut) setFilterStatut(statut);
+  }, [searchParams]);
 
   const STATUSES = [
     { value: 'disponible', label: t('available'), color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
@@ -100,10 +111,11 @@ export function Appartements() {
   const filtered = useMemo(() => {
     let data = appartements.filter(a => a.type_appart === activeTab);
     if (filterBloc !== 'Tous') data = data.filter(a => a.bloc === filterBloc);
+    if (filterStatut !== 'Tous') data = data.filter(a => a.statut === filterStatut);
     if (searchLot) data = data.filter(a => a.numero_lot?.includes(searchLot));
     data.sort((a, b) => parseInt(a.numero_lot || 0) - parseInt(b.numero_lot || 0));
     return data;
-  }, [appartements, activeTab, filterBloc, searchLot]);
+  }, [appartements, activeTab, filterBloc, filterStatut, searchLot]);
 
   // Available blocs for this type
   const availableBlocs = useMemo(() => {
@@ -125,7 +137,7 @@ export function Appartements() {
   // Pagination
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
   const paginatedData = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-  useEffect(() => { setCurrentPage(1); }, [activeTab, filterBloc, searchLot]);
+  useEffect(() => { setCurrentPage(1); }, [activeTab, filterBloc, filterStatut, searchLot]);
 
   const resetForm = () => {
     const edimco = residences.find(r => r.nom === 'EDIMCO');
