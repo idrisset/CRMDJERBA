@@ -1825,19 +1825,21 @@ async def startup_event():
         logger.info(f"Admin password updated: {admin_email}")
     
     # Seed EDIMCO residence
-    residences_count = await db.residences.count_documents({})
-    if residences_count == 0:
-        default_residences = [
-            {"nom": "EDIMCO", "adresse": "EDIMCO, Commune de Bejaia, Wilaya de Bejaia", "description": "Résidence DJERBA - 264 logements promotionnels en R+11 avec sous-sol, duplex 10e-11e étage, RDC et 1er étage commercial/service, crèche et parking souterrain", "created_at": datetime.now(timezone.utc).isoformat()},
-        ]
-        await db.residences.insert_many(default_residences)
-        logger.info("EDIMCO residence created")
+    try:
+        residences_count = await db.residences.count_documents({})
+        if residences_count == 0:
+            await db.residences.insert_one(
+                {"nom": "EDIMCO", "adresse": "EDIMCO, Commune de Bejaia, Wilaya de Bejaia", "description": "Résidence DJERBA - 264 logements promotionnels en R+11 avec sous-sol, duplex 10e-11e étage, RDC et 1er étage commercial/service, crèche et parking souterrain", "created_at": datetime.now(timezone.utc).isoformat()}
+            )
+            logger.info("EDIMCO residence created")
+    except Exception as e:
+        logger.error(f"Residence seed error: {e}")
     
     # Seed EDIMCO apartments if empty
-    apparts_count = await db.appartements.count_documents({})
-    if apparts_count == 0:
-        logger.info("No apartments found — seeding EDIMCO lots...")
-        try:
+    try:
+        apparts_count = await db.appartements.count_documents({})
+        if apparts_count == 0:
+            logger.info("No apartments found — seeding EDIMCO lots...")
             residence = await db.residences.find_one({"nom": "EDIMCO"})
             if residence:
                 import sys
@@ -1862,30 +1864,16 @@ async def startup_event():
                     })
                 await db.appartements.insert_many(docs)
                 logger.info(f"Seeded {len(docs)} EDIMCO lots")
-        except Exception as e:
-            logger.error(f"SEED ERROR: {e}")
+    except Exception as e:
+        logger.error(f"Apartments seed error: {e}")
     
-    # Write test credentials
-    import os as os_module
-    os_module.makedirs("/app/memory", exist_ok=True)
-    with open("/app/memory/test_credentials.md", "w") as f:
-        f.write(f"""# Test Credentials
-
-## Admin Account
-- Email: {admin_email}
-- Password: {admin_password}
-- Role: admin
-
-## Auth Endpoints
-- POST /api/auth/login
-- POST /api/auth/register
-- POST /api/auth/logout
-- GET /api/auth/me
-
-## WhatsApp Webhook
-- GET /api/whatsapp/webhook (verification)
-- POST /api/whatsapp/webhook (messages)
-""")
+    # Write test credentials (non-critical, skip if filesystem is read-only)
+    try:
+        os.makedirs("/app/memory", exist_ok=True)
+        with open("/app/memory/test_credentials.md", "w") as f:
+            f.write(f"# Test Credentials\n\n## Admin Account\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n")
+    except Exception:
+        pass  # Not critical for production
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
