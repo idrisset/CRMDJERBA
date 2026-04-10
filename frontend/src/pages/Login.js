@@ -35,7 +35,15 @@ export function Login() {
       await login(email, password);
       navigate('/');
     } catch (e) {
-      setError(formatApiErrorDetail(e.response?.data?.detail) || e.message);
+      if (e.response?.data?.detail) {
+        setError(formatApiErrorDetail(e.response.data.detail));
+      } else if (e.response?.status) {
+        setError(`Erreur serveur (${e.response.status}). Veuillez réessayer.`);
+      } else if (e.code === 'ERR_NETWORK') {
+        setError('Impossible de contacter le serveur. Vérifiez votre connexion.');
+      } else {
+        setError(e.message || 'Une erreur est survenue. Veuillez réessayer.');
+      }
     } finally {
       setLoading(false);
     }

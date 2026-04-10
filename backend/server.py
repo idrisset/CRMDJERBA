@@ -1763,6 +1763,25 @@ async def admin_seed_edimco(current_user: dict = Depends(get_current_user)):
 # Include router
 app.include_router(api_router)
 
+# Health check endpoint (no auth required)
+@app.get("/api/health")
+async def health_check():
+    try:
+        # Test DB connection
+        await db.command("ping")
+        users_count = await db.users.count_documents({})
+        clients_count = await db.clients.count_documents(SOFT_DELETE_FILTER)
+        apparts_count = await db.appartements.count_documents(SOFT_DELETE_FILTER)
+        return {
+            "status": "ok",
+            "database": "connected",
+            "users": users_count,
+            "clients": clients_count,
+            "appartements": apparts_count
+        }
+    except Exception as e:
+        return {"status": "error", "database": str(e)}
+
 # Root endpoint
 @api_router.get("/")
 async def root():
@@ -1771,6 +1790,17 @@ async def root():
 # Startup event
 @app.on_event("startup")
 async def startup_event():
+    logger.info("=== STARTUP ===")
+    logger.info(f"DB_NAME: {os.environ.get('DB_NAME')}")
+    logger.info(f"MONGO_URL: {os.environ.get('MONGO_URL', '')[:40]}...")
+    
+    try:
+        await db.command("ping")
+        logger.info("MongoDB connection: OK")
+    except Exception as e:
+        logger.error(f"MongoDB connection FAILED: {e}")
+        return
+    
     await db.users.create_index("email", unique=True)
     
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@immo.com")
