@@ -19,7 +19,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Plus, Pencil, Trash2, Search, Loader2, FileSpreadsheet, FileText, MessageSquare, Home } from 'lucide-react';
 import { toast } from 'sonner';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
 
 const OBJECTIFS = ['Achat personnel', 'Investissement'];
 const MODES_PAIEMENT = ['Autofinancement', 'Crédit bancaire'];

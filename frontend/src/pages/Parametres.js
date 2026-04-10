@@ -19,7 +19,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Plus, Pencil, Trash2, Building2, Loader2, Users, Bell, Mail, X, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
 
 export function Parametres() {
   const { user } = useAuth();

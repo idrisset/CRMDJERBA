@@ -20,7 +20,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Plus, Pencil, Trash2, Loader2, Search, ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
 const ITEMS_PER_PAGE = 25;
 
 const TYPE_TABS = [

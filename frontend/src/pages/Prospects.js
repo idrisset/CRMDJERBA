@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
 
 const TYPES_LOGEMENT = ['F2', 'F3', 'F4', 'F5', 'Duplex', 'Studio', 'Villa', 'Local commercial', 'Autre'];
 const SOURCES = ['Foire', 'Réseaux sociaux', 'Recommandation', 'Visite directe', 'Appel téléphonique', 'Site web', 'Autre'];

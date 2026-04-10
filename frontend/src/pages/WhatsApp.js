@@ -9,7 +9,7 @@ import { Badge } from '../components/ui/badge';
 import { MessageSquare, Send, Bot, User, Loader2, Phone, Zap, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
 
 export function WhatsApp() {
   const [conversations, setConversations] = useState([]);

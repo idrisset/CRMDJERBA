@@ -3,7 +3,7 @@ import axios from 'axios';
 
 const AuthContext = createContext(null);
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
 
 // Configure axios interceptor for auth header
 axios.interceptors.request.use((config) => {
@@ -13,6 +13,18 @@ axios.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// Intercept 401 responses to clear stale tokens
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/login')) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+    }
+    return Promise.reject(error);
+  }
+);
 
 export function formatApiErrorDetail(detail) {
   if (detail == null) return "Une erreur est survenue. Veuillez réessayer.";

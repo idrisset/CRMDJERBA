@@ -412,8 +412,19 @@ async def login(credentials: UserLogin):
     }
 
 @api_router.post("/auth/logout")
-async def logout(current_user: dict = Depends(get_current_user)):
-    await audit_log(current_user, "LOGOUT", "session", current_user["_id"], current_user.get("name", ""))
+async def logout(request: Request):
+    # Try to log the logout action if token is valid
+    try:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        if token:
+            payload = jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+            user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+            if user:
+                user_dict = {"_id": str(user["_id"]), "name": user.get("name", ""), "email": user.get("email", "")}
+                await audit_log(user_dict, "LOGOUT", "session", str(user["_id"]), user.get("name", ""))
+    except Exception:
+        pass  # Logout should always succeed even with invalid/expired token
+    
     response = JSONResponse(content={"message": "Déconnexion réussie"})
     response.delete_cookie("access_token", path="/")
     response.delete_cookie("refresh_token", path="/")

@@ -8,7 +8,7 @@ import { Button } from '../components/ui/button';
 import { Users, Building2, Calendar, TrendingUp, MessageSquare, Clock, Database, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
 
 export function Dashboard() {
   const [stats, setStats] = useState(null);

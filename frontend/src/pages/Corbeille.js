@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
 
 const ENTITY_CONFIG = {
   client: { icon: User, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', label: 'Client' },

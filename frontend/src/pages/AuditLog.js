@@ -15,7 +15,7 @@ import {
   RotateCcw, AlertTriangle
 } from 'lucide-react';
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
 
 const ACTION_CONFIG = {
   CREATE: { icon: PlusCircle, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
