@@ -69,6 +69,102 @@ def create_refresh_token(user_id: str) -> str:
     }
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
+# ============ ROLES & PERMISSIONS ============
+ROLES = {
+    "super_admin": {
+        "label": "Super Administrateur",
+        "level": 3,
+        "can_manage_users": True,
+        "can_delete": True,
+        "can_approve": True,
+        "can_modify_sensitive": True,
+        "needs_approval": False,
+    },
+    "admin_limited": {
+        "label": "Administrateur Limité",
+        "level": 2,
+        "can_manage_users": False,
+        "can_delete": False,
+        "can_approve": False,
+        "can_modify_sensitive": False,
+        "needs_approval": True,
+    },
+    "user": {
+        "label": "Utilisateur",
+        "level": 1,
+        "can_manage_users": False,
+        "can_delete": False,
+        "can_approve": False,
+        "can_modify_sensitive": False,
+        "needs_approval": True,
+    },
+}
+
+SENSITIVE_ACTIONS = ["delete_client", "delete_appartement", "delete_prospect", "modify_price", "cancel_reservation", "permanent_delete"]
+
+def get_permissions(role: str) -> dict:
+    return ROLES.get(role, ROLES["user"])
+
+def require_role(user: dict, min_level: int = 1):
+    role = user.get("role", "user")
+    perms = get_permissions(role)
+    if perms["level"] < min_level:
+        raise HTTPException(status_code=403, detail="Permissions insuffisantes")
+    return perms
+
+async def generate_client_reference() -> str:
+    """Generate next client reference like #001, #002..."""
+    last = await db.clients.find_one(
+        {"reference": {"$exists": True, "$ne": None}},
+        sort=[("reference", -1)]
+    )
+    if last and last.get("reference"):
+        try:
+            num = int(last["reference"].replace("#", "")) + 1
+        except ValueError:
+            num = 1
+    else:
+        num = 1
+    return f"#{num:03d}"
+
+async def check_duplicate_client(nom: str, telephone: str, email: str = None, exclude_id: str = None):
+    """Check for potential duplicate clients."""
+    conditions = []
+    if telephone:
+        conditions.append({"telephone": telephone})
+        conditions.append({"telephone2": telephone})
+    if email:
+        conditions.append({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    if nom:
+        conditions.append({"nom": {"$regex": f"^{nom}$", "$options": "i"}})
+    
+    if not conditions:
+        return []
+    
+    query = {"$or": conditions, **SOFT_DELETE_FILTER}
+    if exclude_id:
+        query["_id"] = {"$ne": ObjectId(exclude_id)}
+    
+    duplicates = []
+    async for c in db.clients.find(query):
+        reasons = []
+        if telephone and (c.get("telephone") == telephone or c.get("telephone2") == telephone):
+            reasons.append("telephone")
+        if email and c.get("email", "").lower() == email.lower():
+            reasons.append("email")
+        if nom and c.get("nom", "").lower() == nom.lower():
+            reasons.append("nom")
+        if reasons:
+            duplicates.append({
+                "id": str(c["_id"]),
+                "reference": c.get("reference", ""),
+                "nom": c.get("nom", ""),
+                "telephone": c.get("telephone", ""),
+                "email": c.get("email", ""),
+                "reasons": reasons
+            })
+    return duplicates
+
 # Auth dependency
 async def get_current_user(request: Request) -> dict:
     token = request.cookies.get("access_token")
@@ -120,7 +216,13 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str
     name: str
-    role: str = "commercial"
+    role: str = "user"
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
 
 class ClientCreate(BaseModel):
     nom: str
@@ -136,7 +238,8 @@ class ClientCreate(BaseModel):
     situation_familiale: Optional[str] = None
     notes: Optional[str] = None
     statut: str = "nouveau"
-    appartement_id: Optional[str] = None
+    appartement_ids: Optional[list] = None
+    force_create: Optional[bool] = False
 
 class ClientUpdate(BaseModel):
     nom: Optional[str] = None
@@ -152,7 +255,14 @@ class ClientUpdate(BaseModel):
     situation_familiale: Optional[str] = None
     notes: Optional[str] = None
     statut: Optional[str] = None
-    appartement_id: Optional[str] = None
+    appartement_ids: Optional[list] = None
+
+class ApprovalRequest(BaseModel):
+    action: str
+    entity_type: str
+    entity_id: str
+    entity_name: str
+    details: Optional[dict] = None
 
 class ResidenceCreate(BaseModel):
     nom: str
@@ -460,8 +570,30 @@ async def refresh_token(request: Request):
 async def get_clients(current_user: dict = Depends(get_current_user)):
     result = []
     async for c in db.clients.find(SOFT_DELETE_FILTER):
+        # Get apartment details for this client
+        appart_ids = c.get("appartement_ids") or []
+        # Backward compat: old single appartement_id
+        if not appart_ids and c.get("appartement_id"):
+            appart_ids = [c["appartement_id"]]
+        
+        appartements_info = []
+        for aid in appart_ids:
+            try:
+                a = await db.appartements.find_one({"_id": ObjectId(aid)})
+                if a:
+                    appartements_info.append({
+                        "id": str(a["_id"]),
+                        "numero_lot": a.get("numero_lot", ""),
+                        "bloc": a.get("bloc", ""),
+                        "type_appart": a.get("type_appart", ""),
+                        "statut": a.get("statut", ""),
+                    })
+            except Exception:
+                pass
+        
         client_data = {
             "id": str(c["_id"]),
+            "reference": c.get("reference", ""),
             "nom": c.get("nom", ""),
             "telephone": c.get("telephone", ""),
             "telephone2": c.get("telephone2", ""),
@@ -475,7 +607,8 @@ async def get_clients(current_user: dict = Depends(get_current_user)):
             "situation_familiale": c.get("situation_familiale", ""),
             "notes": c.get("notes", ""),
             "statut": c.get("statut", "nouveau"),
-            "appartement_id": c.get("appartement_id"),
+            "appartement_ids": appart_ids,
+            "appartements_info": appartements_info,
             "source": c.get("source", "manual"),
             "created_at": c.get("created_at", ""),
             "created_by": c.get("created_by", "")
@@ -483,14 +616,31 @@ async def get_clients(current_user: dict = Depends(get_current_user)):
         result.append(client_data)
     return result
 
+@api_router.post("/clients/check-duplicates")
+async def check_duplicates(client: ClientCreate, current_user: dict = Depends(get_current_user)):
+    """Check for duplicate clients before creation."""
+    duplicates = await check_duplicate_client(client.nom, client.telephone, client.email)
+    return {"duplicates": duplicates, "has_duplicates": len(duplicates) > 0}
+
 @api_router.post("/clients")
 async def create_client(client: ClientCreate, current_user: dict = Depends(get_current_user)):
     client_data = client.model_dump()
-    appartement_id = client_data.pop("appartement_id", None)
+    appartement_ids = client_data.pop("appartement_ids", None) or []
+    force_create = client_data.pop("force_create", False)
+    
+    # Check for duplicates unless force_create
+    if not force_create:
+        duplicates = await check_duplicate_client(client.nom, client.telephone, client.email)
+        if duplicates:
+            return {"id": None, "duplicates": duplicates, "needs_confirmation": True}
+    
+    # Generate auto reference
+    reference = await generate_client_reference()
     
     client_doc = {
         **client_data,
-        "appartement_id": appartement_id,
+        "reference": reference,
+        "appartement_ids": appartement_ids,
         "source": "manual",
         "deleted_at": None,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -501,30 +651,33 @@ async def create_client(client: ClientCreate, current_user: dict = Depends(get_c
     
     await audit_log(current_user, "CREATE", "client", client_id, client_data.get("nom", ""), new_values=client_data)
     
-    # If apartment assigned, block it
-    if appartement_id:
-        appart = await db.appartements.find_one({"_id": ObjectId(appartement_id)})
-        if appart and appart.get("statut") == "disponible":
-            await db.appartements.update_one(
-                {"_id": ObjectId(appartement_id)},
-                {"$set": {"statut": "réservé", "client_id": client_id}}
-            )
-            # Log reservation history
-            await db.reservations.insert_one({
-                "client_id": client_id,
-                "client_nom": client_data.get("nom", ""),
-                "appartement_id": appartement_id,
-                "bloc": appart.get("bloc", ""),
-                "numero_lot": appart.get("numero_lot", ""),
-                "type_appart": appart.get("type_appart", ""),
-                "action": "réservé",
-                "agent": current_user.get("name", current_user.get("email", "")),
-                "date": datetime.now(timezone.utc).isoformat()
-            })
-            await manager.broadcast({"type": "appartement_updated", "data": {"id": appartement_id}})
+    # Reserve all assigned apartments
+    for appart_id in appartement_ids:
+        if appart_id:
+            try:
+                appart = await db.appartements.find_one({"_id": ObjectId(appart_id)})
+                if appart and appart.get("statut") == "disponible":
+                    await db.appartements.update_one(
+                        {"_id": ObjectId(appart_id)},
+                        {"$set": {"statut": "réservé", "client_id": client_id}}
+                    )
+                    await db.reservations.insert_one({
+                        "client_id": client_id,
+                        "client_nom": client_data.get("nom", ""),
+                        "appartement_id": appart_id,
+                        "bloc": appart.get("bloc", ""),
+                        "numero_lot": appart.get("numero_lot", ""),
+                        "type_appart": appart.get("type_appart", ""),
+                        "action": "réservé",
+                        "agent": current_user.get("name", current_user.get("email", "")),
+                        "date": datetime.now(timezone.utc).isoformat()
+                    })
+                    await manager.broadcast({"type": "appartement_updated", "data": {"id": appart_id}})
+            except Exception:
+                pass
     
     await manager.broadcast({"type": "client_created", "data": {"id": client_id}})
-    return {"id": client_id, **client_data}
+    return {"id": client_id, "reference": reference, **client_data}
 
 @api_router.put("/clients/{client_id}")
 async def update_client(client_id: str, client: ClientUpdate, current_user: dict = Depends(get_current_user)):
@@ -535,104 +688,144 @@ async def update_client(client_id: str, client: ClientUpdate, current_user: dict
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     update_data["updated_by"] = current_user["_id"]
     
-    # Get existing client to check old apartment
     existing = await db.clients.find_one({"_id": ObjectId(client_id), **SOFT_DELETE_FILTER})
     if not existing:
         raise HTTPException(status_code=404, detail="Client non trouvé")
     
-    # Capture old values for audit
     old_vals = {k: existing.get(k) for k in update_data.keys() if existing.get(k) != update_data.get(k)}
     
-    old_appart_id = existing.get("appartement_id")
-    new_appart_id = client.appartement_id
+    # Handle multi-apartment changes
+    new_appart_ids = update_data.get("appartement_ids")
+    old_appart_ids = existing.get("appartement_ids") or []
+    if not old_appart_ids and existing.get("appartement_id"):
+        old_appart_ids = [existing["appartement_id"]]
     
-    # If apartment changed, handle reservation logic
-    if new_appart_id is not None and new_appart_id != old_appart_id:
-        # Release old apartment
-        if old_appart_id:
-            await db.appartements.update_one(
-                {"_id": ObjectId(old_appart_id)},
-                {"$set": {"statut": "disponible", "client_id": None}}
-            )
-            await db.reservations.insert_one({
-                "client_id": client_id,
-                "client_nom": existing.get("nom", ""),
-                "appartement_id": old_appart_id,
-                "action": "libéré",
-                "agent": current_user.get("name", current_user.get("email", "")),
-                "date": datetime.now(timezone.utc).isoformat()
-            })
-            await manager.broadcast({"type": "appartement_updated", "data": {"id": old_appart_id}})
+    if new_appart_ids is not None:
+        old_set = set(old_appart_ids)
+        new_set = set([a for a in new_appart_ids if a and a != "none"])
         
-        # Block new apartment
-        if new_appart_id and new_appart_id != "none":
-            appart = await db.appartements.find_one({"_id": ObjectId(new_appart_id)})
-            if appart:
-                # Check if already taken by someone else
-                if appart.get("statut") != "disponible" and appart.get("client_id") and appart.get("client_id") != client_id:
-                    raise HTTPException(status_code=409, detail=f"Lot {appart.get('numero_lot')} déjà réservé par un autre client")
-                
+        # Release removed apartments
+        for aid in old_set - new_set:
+            try:
                 await db.appartements.update_one(
-                    {"_id": ObjectId(new_appart_id)},
-                    {"$set": {"statut": "réservé", "client_id": client_id}}
+                    {"_id": ObjectId(aid)},
+                    {"$set": {"statut": "disponible", "client_id": None}}
                 )
+                old_a = await db.appartements.find_one({"_id": ObjectId(aid)})
                 await db.reservations.insert_one({
                     "client_id": client_id,
-                    "client_nom": update_data.get("nom", existing.get("nom", "")),
-                    "appartement_id": new_appart_id,
-                    "bloc": appart.get("bloc", ""),
-                    "numero_lot": appart.get("numero_lot", ""),
-                    "type_appart": appart.get("type_appart", ""),
-                    "action": "réservé",
+                    "client_nom": existing.get("nom", ""),
+                    "appartement_id": aid,
+                    "bloc": old_a.get("bloc", "") if old_a else "",
+                    "numero_lot": old_a.get("numero_lot", "") if old_a else "",
+                    "action": "libéré",
                     "agent": current_user.get("name", current_user.get("email", "")),
                     "date": datetime.now(timezone.utc).isoformat()
                 })
-                # Auto-set client status to réservé
-                update_data["statut"] = "réservé"
-                await manager.broadcast({"type": "appartement_updated", "data": {"id": new_appart_id}})
-        else:
-            # Removing apartment assignment
-            update_data["appartement_id"] = None
-    elif client.statut == "vendu" and old_appart_id:
-        # Mark apartment as sold
-        await db.appartements.update_one(
-            {"_id": ObjectId(old_appart_id)},
-            {"$set": {"statut": "vendu"}}
-        )
-        await db.reservations.insert_one({
-            "client_id": client_id,
-            "client_nom": update_data.get("nom", existing.get("nom", "")),
-            "appartement_id": old_appart_id,
-            "action": "vendu",
-            "agent": current_user.get("name", current_user.get("email", "")),
-            "date": datetime.now(timezone.utc).isoformat()
-        })
-        await manager.broadcast({"type": "appartement_updated", "data": {"id": old_appart_id}})
+                await manager.broadcast({"type": "appartement_updated", "data": {"id": aid}})
+            except Exception:
+                pass
+        
+        # Reserve new apartments
+        for aid in new_set - old_set:
+            try:
+                appart = await db.appartements.find_one({"_id": ObjectId(aid)})
+                if appart:
+                    if appart.get("statut") != "disponible" and appart.get("client_id") and appart.get("client_id") != client_id:
+                        raise HTTPException(status_code=409, detail=f"Lot {appart.get('numero_lot')} déjà réservé")
+                    await db.appartements.update_one(
+                        {"_id": ObjectId(aid)},
+                        {"$set": {"statut": "réservé", "client_id": client_id}}
+                    )
+                    await db.reservations.insert_one({
+                        "client_id": client_id,
+                        "client_nom": update_data.get("nom", existing.get("nom", "")),
+                        "appartement_id": aid,
+                        "bloc": appart.get("bloc", ""),
+                        "numero_lot": appart.get("numero_lot", ""),
+                        "type_appart": appart.get("type_appart", ""),
+                        "action": "réservé",
+                        "agent": current_user.get("name", current_user.get("email", "")),
+                        "date": datetime.now(timezone.utc).isoformat()
+                    })
+                    await manager.broadcast({"type": "appartement_updated", "data": {"id": aid}})
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+        
+        update_data["appartement_ids"] = list(new_set)
+        if "appartement_id" in update_data:
+            del update_data["appartement_id"]
     
-    result = await db.clients.update_one(
-        {"_id": ObjectId(client_id)},
-        {"$set": update_data}
-    )
+    # Handle status change to vendu
+    if client.statut == "vendu":
+        final_ids = update_data.get("appartement_ids", old_appart_ids)
+        for aid in final_ids:
+            try:
+                await db.appartements.update_one(
+                    {"_id": ObjectId(aid)},
+                    {"$set": {"statut": "vendu"}}
+                )
+                appart = await db.appartements.find_one({"_id": ObjectId(aid)})
+                await db.reservations.insert_one({
+                    "client_id": client_id,
+                    "client_nom": update_data.get("nom", existing.get("nom", "")),
+                    "appartement_id": aid,
+                    "bloc": appart.get("bloc", "") if appart else "",
+                    "numero_lot": appart.get("numero_lot", "") if appart else "",
+                    "action": "vendu",
+                    "agent": current_user.get("name", current_user.get("email", "")),
+                    "date": datetime.now(timezone.utc).isoformat()
+                })
+                await manager.broadcast({"type": "appartement_updated", "data": {"id": aid}})
+            except Exception:
+                pass
     
+    await db.clients.update_one({"_id": ObjectId(client_id)}, {"$set": update_data})
     await manager.broadcast({"type": "client_updated", "data": {"id": client_id}})
     await audit_log(current_user, "UPDATE", "client", client_id, existing.get("nom", ""), old_values=old_vals, new_values=update_data)
     return {"id": client_id, **update_data}
 
 @api_router.delete("/clients/{client_id}")
 async def delete_client(client_id: str, current_user: dict = Depends(get_current_user)):
+    perms = get_permissions(current_user.get("role", "user"))
     existing = await db.clients.find_one({"_id": ObjectId(client_id), **SOFT_DELETE_FILTER})
     if not existing:
         raise HTTPException(status_code=404, detail="Client non trouvé")
     
-    # Release any apartment assigned to this client
-    if existing.get("appartement_id"):
-        await db.appartements.update_one(
-            {"_id": ObjectId(existing["appartement_id"])},
-            {"$set": {"statut": "disponible", "client_id": None}}
-        )
-        await manager.broadcast({"type": "appartement_updated", "data": {"id": existing["appartement_id"]}})
+    # If user needs approval for deletion
+    if perms["needs_approval"]:
+        await db.approval_requests.insert_one({
+            "requester_id": current_user["_id"],
+            "requester_name": current_user.get("name", current_user.get("email", "")),
+            "requester_role": current_user.get("role", "user"),
+            "action": "delete_client",
+            "entity_type": "client",
+            "entity_id": client_id,
+            "entity_name": existing.get("nom", ""),
+            "details": {"reference": existing.get("reference", ""), "telephone": existing.get("telephone", "")},
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        await audit_log(current_user, "APPROVAL_REQUEST", "client", client_id, existing.get("nom", ""), new_values={"action": "delete_client"})
+        await manager.broadcast({"type": "approval_request_created"})
+        return {"message": "Demande d'approbation envoyée au Super Administrateur", "approval_required": True}
     
-    # Soft delete
+    # Release all apartments
+    appart_ids = existing.get("appartement_ids") or []
+    if not appart_ids and existing.get("appartement_id"):
+        appart_ids = [existing["appartement_id"]]
+    for aid in appart_ids:
+        try:
+            await db.appartements.update_one(
+                {"_id": ObjectId(aid)},
+                {"$set": {"statut": "disponible", "client_id": None}}
+            )
+            await manager.broadcast({"type": "appartement_updated", "data": {"id": aid}})
+        except Exception:
+            pass
+    
     await db.clients.update_one(
         {"_id": ObjectId(client_id)},
         {"$set": {
@@ -641,7 +834,6 @@ async def delete_client(client_id: str, current_user: dict = Depends(get_current
             "deleted_by_name": current_user.get("name", current_user.get("email", ""))
         }}
     )
-    
     await audit_log(current_user, "DELETE", "client", client_id, existing.get("nom", ""))
     await manager.broadcast({"type": "client_deleted", "data": {"id": client_id}})
     return {"message": "Client déplacé dans la corbeille"}
