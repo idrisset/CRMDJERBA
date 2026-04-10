@@ -18,6 +18,7 @@ import { AuditLog } from "./pages/AuditLog";
 import { Corbeille } from "./pages/Corbeille";
 import { Admin } from "./pages/Admin";
 import { ClientsEnDouble } from "./pages/ClientsEnDouble";
+import { Sauvegardes } from "./pages/Sauvegardes";
 import { Toaster } from "./components/ui/sonner";
 
 function App() {
@@ -129,6 +130,16 @@ function App() {
                   <ProtectedRoute>
                     <Layout>
                       <ClientsEnDouble />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/sauvegardes"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <Sauvegardes />
                     </Layout>
                   </ProtectedRoute>
                 }

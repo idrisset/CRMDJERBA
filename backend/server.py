@@ -23,6 +23,8 @@ from typing import List, Optional
 from openpyxl import Workbook
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import backup_manager
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.units import cm
@@ -2106,6 +2108,173 @@ async def merge_clients_action(keep_id: str, merge_id: str, current_user: dict =
     await manager.broadcast({"type": "client_updated", "data": {"id": keep_id}})
     
     return {"message": f"Client fusionné avec succès", "kept_id": keep_id, "merged_id": merge_id}
+
+# ============ BACKUP & RESTORE ============
+@api_router.get("/backups")
+async def get_backups(current_user: dict = Depends(get_current_user)):
+    """List all backups - Super Admin only"""
+    require_role(current_user, min_level=3)
+    return backup_manager.list_backups()
+
+@api_router.post("/backups")
+async def create_backup_endpoint(current_user: dict = Depends(get_current_user)):
+    """Create a manual backup - Super Admin only"""
+    require_role(current_user, min_level=3)
+    
+    result = await backup_manager.create_backup(
+        backup_type="manual",
+        triggered_by=current_user.get("name", current_user.get("email", ""))
+    )
+    
+    # Log the backup action
+    await audit_log(current_user, "BACKUP", "system", result["backup_id"], f"Backup {result['type']}", new_values={"status": result["status"], "size_mb": result.get("size_mb", 0)})
+    
+    # Save backup metadata to DB
+    result_db = {k: v for k, v in result.items() if k != "_id"}
+    await db.backups.insert_one(result_db)
+    
+    if result["status"] == "failed":
+        # Send failure email
+        asyncio.create_task(send_backup_alert_email("failed", result))
+        raise HTTPException(status_code=500, detail=f"Sauvegarde échouée: {result.get('error', 'Unknown')}")
+    
+    return result
+
+@api_router.post("/backups/{backup_id}/restore")
+async def restore_backup_endpoint(backup_id: str, current_user: dict = Depends(get_current_user)):
+    """Restore a backup - Super Admin only"""
+    require_role(current_user, min_level=3)
+    
+    # Create a safety backup before restoring
+    safety = await backup_manager.create_backup(
+        backup_type="pre_restore",
+        triggered_by=f"Auto-save before restore by {current_user.get('name', '')}"
+    )
+    safety_db = {k: v for k, v in safety.items() if k != "_id"}
+    await db.backups.insert_one(safety_db)
+    
+    result = await backup_manager.restore_backup(backup_id)
+    
+    if result["status"] == "failed":
+        asyncio.create_task(send_backup_alert_email("restore_failed", result))
+        raise HTTPException(status_code=500, detail=f"Restauration échouée: {result.get('error', 'Unknown')}")
+    
+    # Log restore and send email
+    await audit_log(current_user, "RESTORE", "system", backup_id, f"Restore from {backup_id}", new_values={"safety_backup": safety.get("backup_id", "")})
+    asyncio.create_task(send_backup_alert_email("restored", {**result, "safety_backup": safety.get("backup_id", "")}))
+    
+    return {**result, "safety_backup_id": safety.get("backup_id", "")}
+
+@api_router.delete("/backups/{backup_id}")
+async def delete_backup_endpoint(backup_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a backup - Super Admin only"""
+    require_role(current_user, min_level=3)
+    
+    deleted = backup_manager.delete_backup(backup_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Sauvegarde non trouvée")
+    
+    await db.backups.delete_one({"backup_id": backup_id})
+    await audit_log(current_user, "DELETE_BACKUP", "system", backup_id, f"Deleted backup {backup_id}")
+    return {"message": "Sauvegarde supprimée"}
+
+@api_router.get("/backups/stats")
+async def get_backup_stats(current_user: dict = Depends(get_current_user)):
+    """Get backup statistics"""
+    require_role(current_user, min_level=3)
+    backups = backup_manager.list_backups()
+    
+    total = len(backups)
+    successful = len([b for b in backups if b.get("status") == "success"])
+    failed = len([b for b in backups if b.get("status") == "failed"])
+    total_size = sum(b.get("size_mb", 0) for b in backups if b.get("status") == "success")
+    last_backup = backups[0] if backups else None
+    
+    auto_count = len([b for b in backups if b.get("type") in ("auto_6h", "auto_daily")])
+    manual_count = len([b for b in backups if b.get("type") == "manual"])
+    
+    return {
+        "total": total,
+        "successful": successful,
+        "failed": failed,
+        "total_size_mb": round(total_size, 2),
+        "last_backup": last_backup,
+        "auto_count": auto_count,
+        "manual_count": manual_count,
+    }
+
+async def send_backup_alert_email(event_type: str, details: dict):
+    """Send backup alert email via Resend"""
+    try:
+        if not resend.api_key:
+            return
+        notification_email = os.environ.get("NOTIFICATION_EMAIL", "")
+        if not notification_email:
+            return
+        
+        subjects = {
+            "failed": "ALERTE: Sauvegarde échouée",
+            "restore_failed": "ALERTE: Restauration échouée",
+            "restored": "INFO: Restauration effectuée",
+        }
+        colors_map = {
+            "failed": "#ef4444",
+            "restore_failed": "#ef4444",
+            "restored": "#3b82f6",
+        }
+        
+        subject = subjects.get(event_type, f"Backup: {event_type}")
+        color = colors_map.get(event_type, "#6b7280")
+        
+        html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #1E3A5F; color: white; padding: 20px; text-align: center;">
+                <h1 style="margin: 0; font-size: 20px;">DJERBA CONSTRUCTION - CRM</h1>
+            </div>
+            <div style="padding: 20px; background: #f8f9fa;">
+                <h2 style="color: {color};">{subject}</h2>
+                <p><strong>Type:</strong> {event_type}</p>
+                <p><strong>Backup ID:</strong> {details.get('backup_id', '-')}</p>
+                <p><strong>Date:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}</p>
+                {"<p><strong>Erreur:</strong> " + str(details.get('error', '')) + "</p>" if details.get('error') else ""}
+                {"<p><strong>Sauvegarde de sécurité:</strong> " + str(details.get('safety_backup', '')) + "</p>" if details.get('safety_backup') else ""}
+                <p style="color: #666; font-size: 12px; margin-top: 20px;">CRM DJERBA CONSTRUCTION - Système de sauvegarde automatique</p>
+            </div>
+        </div>
+        """
+        params = {"from": SENDER_EMAIL, "to": [notification_email], "subject": subject, "html": html}
+        await asyncio.to_thread(resend.Emails.send, params)
+    except Exception as e:
+        logger.error(f"Backup alert email error: {e}")
+
+# ============ BACKUP SCHEDULER ============
+scheduler = AsyncIOScheduler()
+
+async def scheduled_backup_6h():
+    """Automatic backup every 6 hours"""
+    try:
+        result = await backup_manager.create_backup(backup_type="auto_6h", triggered_by="Scheduler")
+        result_db = {k: v for k, v in result.items() if k != "_id"}
+        await db.backups.insert_one(result_db)
+        if result["status"] == "failed":
+            await send_backup_alert_email("failed", result)
+        # Apply retention policy
+        await backup_manager.apply_retention_policy()
+    except Exception as e:
+        logger.error(f"Scheduled 6h backup error: {e}")
+
+async def scheduled_backup_daily():
+    """Daily backup at 2 AM"""
+    try:
+        result = await backup_manager.create_backup(backup_type="auto_daily", triggered_by="Scheduler")
+        result_db = {k: v for k, v in result.items() if k != "_id"}
+        await db.backups.insert_one(result_db)
+        if result["status"] == "failed":
+            await send_backup_alert_email("failed", result)
+        await backup_manager.apply_retention_policy()
+    except Exception as e:
+        logger.error(f"Scheduled daily backup error: {e}")
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -2484,7 +2653,20 @@ async def startup_event():
             logger.info(f"Migration: migrated {result.modified_count} admin users to super_admin")
     except Exception as e:
         logger.error(f"Role migration error: {e}")
+    
+    # ===== START BACKUP SCHEDULER =====
+    try:
+        scheduler.add_job(scheduled_backup_6h, 'interval', hours=6, id='backup_6h', replace_existing=True)
+        scheduler.add_job(scheduled_backup_daily, 'cron', hour=2, minute=0, id='backup_daily', replace_existing=True)
+        scheduler.start()
+        logger.info("Backup scheduler started (every 6h + daily at 02:00)")
+    except Exception as e:
+        logger.error(f"Scheduler start error: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    try:
+        scheduler.shutdown(wait=False)
+    except Exception:
+        pass
     client.close()

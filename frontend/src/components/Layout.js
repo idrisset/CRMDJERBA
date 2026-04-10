@@ -17,7 +17,8 @@ import {
   Shield,
   Trash2,
   ShieldCheck,
-  Copy
+  Copy,
+  HardDrive
 } from 'lucide-react';
 import { Button } from './ui/button';
 import {
@@ -62,6 +63,7 @@ export function Layout({ children }) {
   const perms = user?.permissions;
   if (perms?.can_manage_users || user?.role === 'super_admin' || user?.role === 'admin') {
     navItems.push({ to: '/admin', icon: ShieldCheck, label: t('administration') });
+    navItems.push({ to: '/sauvegardes', icon: HardDrive, label: 'Sauvegardes' });
   }
   if (perms?.level >= 2 || user?.role === 'super_admin' || user?.role === 'admin') {
     navItems.push({ to: '/parametres', icon: Settings, label: t('settings') });

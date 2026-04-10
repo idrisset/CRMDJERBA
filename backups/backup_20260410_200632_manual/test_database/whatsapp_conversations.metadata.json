@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"690aac11a48c49769e712309979ff9f2","collectionName":"whatsapp_conversations","type":"collection"}
