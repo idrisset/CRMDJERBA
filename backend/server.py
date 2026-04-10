@@ -2204,6 +2204,43 @@ async def download_backup(backup_id: str, current_user: dict = Depends(get_curre
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename={backup_id}.zip"}
     )
+
+@api_router.get("/backups/email-settings")
+async def get_backup_email_settings(current_user: dict = Depends(get_current_user)):
+    """Get backup email export settings"""
+    require_role(current_user, min_level=3)
+    settings = await db.notification_settings.find_one({"type": "backup_email_export"})
+    if not settings:
+        return {"enabled": False, "email": os.environ.get("NOTIFICATION_EMAIL", ""), "schedule": "weekly"}
+    return {"enabled": settings.get("enabled", False), "email": settings.get("email", ""), "schedule": settings.get("schedule", "weekly")}
+
+class BackupEmailSettings(BaseModel):
+    enabled: bool
+    email: str
+
+@api_router.post("/backups/email-settings")
+async def save_backup_email_settings(settings: BackupEmailSettings, current_user: dict = Depends(get_current_user)):
+    """Save backup email export settings"""
+    require_role(current_user, min_level=3)
+    await db.notification_settings.update_one(
+        {"type": "backup_email_export"},
+        {"$set": {"type": "backup_email_export", "enabled": settings.enabled, "email": settings.email, "updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": current_user.get("name", "")}},
+        upsert=True
+    )
+    await audit_log(current_user, "UPDATE", "settings", "backup_email_export", "Email export settings", new_values={"enabled": settings.enabled, "email": settings.email})
+    return {"enabled": settings.enabled, "email": settings.email}
+
+@api_router.post("/backups/send-test-email")
+async def send_test_backup_email(current_user: dict = Depends(get_current_user)):
+    """Send a test backup email now"""
+    require_role(current_user, min_level=3)
+    settings = await db.notification_settings.find_one({"type": "backup_email_export"})
+    if settings and settings.get("enabled"):
+        await scheduled_weekly_email_export()
+        return {"message": "Email de test envoyé"}
+    raise HTTPException(status_code=400, detail="Activez d'abord l'export par email")
+
+@api_router.get("/backups/stats")
 async def get_backup_stats(current_user: dict = Depends(get_current_user)):
     """Get backup statistics"""
     require_role(current_user, min_level=3)
@@ -2299,6 +2336,81 @@ async def scheduled_backup_daily():
         await backup_manager.apply_retention_policy()
     except Exception as e:
         logger.error(f"Scheduled daily backup error: {e}")
+
+async def scheduled_weekly_email_export():
+    """Weekly email with ZIP backup attached - every Sunday at 3 AM"""
+    try:
+        # Check if feature is enabled
+        settings = await db.notification_settings.find_one({"type": "backup_email_export"})
+        if not settings or not settings.get("enabled", False):
+            return
+        
+        recipient = settings.get("email") or os.environ.get("NOTIFICATION_EMAIL", "")
+        if not recipient or not resend.api_key:
+            return
+        
+        # Create a fresh backup
+        result = await backup_manager.create_backup(backup_type="weekly_export", triggered_by="Email Export")
+        result_db = {k: v for k, v in result.items() if k != "_id"}
+        await db.backups.insert_one(result_db)
+        
+        if result["status"] != "success":
+            await send_backup_alert_email("failed", result)
+            return
+        
+        # Create ZIP
+        import zipfile, base64
+        backup_path = backup_manager.get_backup_path(result["backup_id"])
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for dirpath, dirnames, filenames in os.walk(backup_path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    arcname = os.path.relpath(filepath, backup_path)
+                    zf.write(filepath, arcname)
+        zip_bytes = zip_buffer.getvalue()
+        
+        date_str = datetime.now(timezone.utc).strftime('%d/%m/%Y')
+        size_kb = round(len(zip_bytes) / 1024, 1)
+        
+        # Get DB stats
+        client_count = await db.clients.count_documents({"deleted_at": {"$eq": None}})
+        appart_count = await db.appartements.count_documents({})
+        prospect_count = await db.prospects.count_documents({"deleted_at": {"$eq": None}})
+        
+        html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #1E3A5F; color: white; padding: 20px; text-align: center;">
+                <h1 style="margin: 0; font-size: 20px;">DJERBA CONSTRUCTION - CRM</h1>
+            </div>
+            <div style="padding: 20px; background: #f8f9fa;">
+                <h2 style="color: #1E3A5F;">Sauvegarde hebdomadaire</h2>
+                <p style="color: #333;">Voici votre copie de sécurité automatique du <strong>{date_str}</strong>.</p>
+                <div style="background: white; border-radius: 8px; padding: 16px; margin: 16px 0; border: 1px solid #e2e8f0;">
+                    <p style="margin: 4px 0;"><strong>Clients :</strong> {client_count}</p>
+                    <p style="margin: 4px 0;"><strong>Appartements :</strong> {appart_count}</p>
+                    <p style="margin: 4px 0;"><strong>Prospects :</strong> {prospect_count}</p>
+                    <p style="margin: 4px 0;"><strong>Taille :</strong> {size_kb} KB</p>
+                </div>
+                <p style="color: #666; font-size: 13px;">Le fichier ZIP est joint à cet email. Conservez-le dans un endroit sûr.</p>
+                <p style="color: #999; font-size: 11px; margin-top: 20px;">CRM DJERBA CONSTRUCTION - Export automatique hebdomadaire</p>
+            </div>
+        </div>
+        """
+        
+        zip_b64 = base64.b64encode(zip_bytes).decode()
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [recipient],
+            "subject": f"CRM EDIMCO - Sauvegarde hebdomadaire {date_str}",
+            "html": html,
+            "attachments": [{"filename": f"backup_crm_{datetime.now(timezone.utc).strftime('%Y%m%d')}.zip", "content": zip_b64}]
+        }
+        await asyncio.to_thread(resend.Emails.send, params)
+        logger.info(f"Weekly backup email sent to {recipient} ({size_kb} KB)")
+        
+    except Exception as e:
+        logger.error(f"Weekly email export error: {e}")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -2683,6 +2795,7 @@ async def startup_event():
     try:
         scheduler.add_job(scheduled_backup_6h, 'interval', hours=6, id='backup_6h', replace_existing=True)
         scheduler.add_job(scheduled_backup_daily, 'cron', hour=2, minute=0, id='backup_daily', replace_existing=True)
+        scheduler.add_job(scheduled_weekly_email_export, 'cron', day_of_week='sun', hour=3, minute=0, id='weekly_email_export', replace_existing=True)
         scheduler.start()
         logger.info("Backup scheduler started (every 6h + daily at 02:00)")
     except Exception as e:

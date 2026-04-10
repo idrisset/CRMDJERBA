@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
@@ -24,17 +25,22 @@ export function Sauvegardes() {
   const [creating, setCreating] = useState(false);
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [restoring, setRestoring] = useState(false);
+  const [emailSettings, setEmailSettings] = useState({ enabled: false, email: '' });
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
 
   const isSuperAdmin = user?.permissions?.level >= 3 || user?.role === 'super_admin' || user?.role === 'admin';
 
   const fetchData = useCallback(async () => {
     try {
-      const [backupsRes, statsRes] = await Promise.all([
+      const [backupsRes, statsRes, emailRes] = await Promise.all([
         axios.get(`${API}/backups`),
         axios.get(`${API}/backups/stats`),
+        axios.get(`${API}/backups/email-settings`),
       ]);
       setBackups(backupsRes.data || []);
       setStats(statsRes.data || null);
+      setEmailSettings(emailRes.data || { enabled: false, email: '' });
     } catch (e) {
       console.error('Backup fetch error:', e);
     } finally {
@@ -101,6 +107,30 @@ export function Sauvegardes() {
         toast.success('Téléchargement démarré');
       })
       .catch(() => toast.error('Erreur lors du téléchargement'));
+  };
+
+  const handleSaveEmailSettings = async () => {
+    setSavingEmail(true);
+    try {
+      await axios.post(`${API}/backups/email-settings`, emailSettings);
+      toast.success(emailSettings.enabled ? 'Export email activé' : 'Export email désactivé');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Erreur');
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    setSendingTest(true);
+    try {
+      await axios.post(`${API}/backups/send-test-email`);
+      toast.success('Email de test envoyé !');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Erreur');
+    } finally {
+      setSendingTest(false);
+    }
   };
 
   const formatDate = (iso) => {
@@ -240,6 +270,68 @@ export function Sauvegardes() {
               <p className="text-xs text-slate-400 mt-1">
                 Conservation : 7 jours (quotidien) + 4 semaines + 3 mois
               </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Email Export Settings */}
+      <Card className="card-luxury border-s-4 border-s-blue-500" data-testid="email-export-settings">
+        <CardContent className="py-4">
+          <div className="flex items-start gap-4">
+            <div className="h-10 w-10 rounded bg-blue-50 flex items-center justify-center mt-1">
+              <Download className="h-5 w-5 text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-slate-900">Export hebdomadaire par email</p>
+                  <p className="text-sm text-slate-500 mt-0.5">
+                    Recevez une copie ZIP de la base chaque dimanche à 03h00
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer" data-testid="email-export-toggle">
+                  <input
+                    type="checkbox"
+                    checked={emailSettings.enabled}
+                    onChange={e => setEmailSettings({ ...emailSettings, enabled: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#1E3A5F]"></div>
+                </label>
+              </div>
+              {emailSettings.enabled && (
+                <div className="mt-3 flex items-center gap-2">
+                  <Input
+                    type="email"
+                    value={emailSettings.email}
+                    onChange={e => setEmailSettings({ ...emailSettings, email: e.target.value })}
+                    placeholder="Email de réception..."
+                    className="h-9 max-w-xs text-sm"
+                    data-testid="email-export-input"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleSaveEmailSettings}
+                    disabled={savingEmail}
+                    className="bg-[#1E3A5F] hover:bg-[#2A4D7C] h-9"
+                    data-testid="save-email-settings-btn"
+                  >
+                    {savingEmail ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleSendTestEmail}
+                    disabled={sendingTest}
+                    className="h-9 text-xs"
+                    data-testid="send-test-email-btn"
+                  >
+                    {sendingTest ? <Loader2 className="h-3 w-3 animate-spin me-1" /> : null}
+                    Tester
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>

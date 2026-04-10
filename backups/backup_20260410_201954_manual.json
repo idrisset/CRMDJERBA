@@ -1,0 +1,35 @@
+{
+  "backup_id": "backup_20260410_201954_manual",
+  "type": "manual",
+  "triggered_by": "Administrateur",
+  "status": "success",
+  "created_at": "2026-04-10T20:19:54.922776+00:00",
+  "size_mb": 0.14,
+  "collections": [
+    "clients",
+    "appartements",
+    "prospects",
+    "reservations",
+    "audit_logs",
+    "approval_requests",
+    "users",
+    "residences",
+    "notification_settings",
+    "whatsapp_messages",
+    "backups"
+  ],
+  "error": null,
+  "completed_at": "2026-04-10T20:19:55.056041+00:00",
+  "collection_sizes": {
+    "audit_logs": "25.2 KB",
+    "prospects": "2.1 KB",
+    "appartements": "99.8 KB",
+    "residences": "0.2 KB",
+    "backups": "2.9 KB",
+    "notification_settings": "0.2 KB",
+    "users": "1.7 KB",
+    "whatsapp_conversations": "3.5 KB",
+    "clients": "2.9 KB",
+    "reservations": "2.5 KB"
+  }
+}
