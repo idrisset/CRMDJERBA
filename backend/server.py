@@ -2421,9 +2421,69 @@ async def startup_event():
     try:
         os.makedirs("/app/memory", exist_ok=True)
         with open("/app/memory/test_credentials.md", "w") as f:
-            f.write(f"# Test Credentials\n\n## Admin Account\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n")
+            f.write(f"# Test Credentials\n\n## Admin Account\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: super_admin\n")
     except Exception:
         pass  # Not critical for production
+    
+    # ===== DATA MIGRATION =====
+    # 1. Assign auto-references to clients that don't have one
+    try:
+        last_ref = await db.clients.find_one(
+            {"reference": {"$exists": True, "$ne": "", "$ne": None}},
+            sort=[("reference", -1)]
+        )
+        if last_ref and last_ref.get("reference"):
+            try:
+                counter = int(last_ref["reference"].replace("#", ""))
+            except (ValueError, TypeError):
+                counter = 0
+        else:
+            counter = 0
+        
+        clients_without_ref = db.clients.find({
+            "$or": [
+                {"reference": {"$exists": False}},
+                {"reference": None},
+                {"reference": ""}
+            ]
+        }).sort("created_at", 1)
+        
+        async for c in clients_without_ref:
+            counter += 1
+            ref = f"#{counter:03d}"
+            await db.clients.update_one({"_id": c["_id"]}, {"$set": {"reference": ref}})
+        
+        if counter > 0:
+            logger.info(f"Migration: assigned references up to #{counter:03d}")
+    except Exception as e:
+        logger.error(f"Reference migration error: {e}")
+    
+    # 2. Migrate old appartement_id (singular) to appartement_ids (array)
+    try:
+        migrated = 0
+        async for c in db.clients.find({"appartement_id": {"$exists": True, "$ne": None}, "appartement_ids": {"$exists": False}}):
+            old_id = c.get("appartement_id")
+            if old_id:
+                await db.clients.update_one({"_id": c["_id"]}, {"$set": {"appartement_ids": [old_id]}})
+                migrated += 1
+        # Also handle clients with old field but empty appartement_ids
+        async for c in db.clients.find({"appartement_id": {"$exists": True, "$ne": None}, "appartement_ids": {"$size": 0}}):
+            old_id = c.get("appartement_id")
+            if old_id:
+                await db.clients.update_one({"_id": c["_id"]}, {"$set": {"appartement_ids": [old_id]}})
+                migrated += 1
+        if migrated > 0:
+            logger.info(f"Migration: migrated {migrated} clients from appartement_id to appartement_ids")
+    except Exception as e:
+        logger.error(f"Apartment migration error: {e}")
+    
+    # 3. Migrate old 'admin' role to 'super_admin' for all users
+    try:
+        result = await db.users.update_many({"role": "admin"}, {"$set": {"role": "super_admin"}})
+        if result.modified_count > 0:
+            logger.info(f"Migration: migrated {result.modified_count} admin users to super_admin")
+    except Exception as e:
+        logger.error(f"Role migration error: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
