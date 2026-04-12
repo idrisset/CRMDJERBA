@@ -2632,6 +2632,15 @@ async def health_check():
     except Exception as e:
         return {"status": "error", "database": str(e)}
 
+# Download build ZIP (no auth - temporary)
+from fastapi.responses import FileResponse
+@app.get("/api/download-build")
+async def download_build():
+    zip_path = "/app/crm-cpanel-build.zip"
+    if os.path.exists(zip_path):
+        return FileResponse(zip_path, filename="crm-cpanel-build.zip", media_type="application/zip")
+    return {"error": "Build not found"}
+
 # Root endpoint
 @api_router.get("/")
 async def root():
