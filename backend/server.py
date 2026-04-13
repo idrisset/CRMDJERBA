@@ -2634,12 +2634,27 @@ async def health_check():
 
 # Download build ZIP (no auth - temporary)
 from fastapi.responses import FileResponse
+
 @app.get("/api/download-build")
 async def download_build():
-    zip_path = "/app/crm-cpanel-build.zip"
+    zip_path = "/app/deploy/frontend-cpanel.zip"
     if os.path.exists(zip_path):
-        return FileResponse(zip_path, filename="crm-cpanel-build.zip", media_type="application/zip")
+        return FileResponse(zip_path, filename="frontend-cpanel.zip", media_type="application/zip")
     return {"error": "Build not found"}
+
+@app.get("/api/download-backend")
+async def download_backend():
+    zip_path = "/app/deploy/backend-vps.zip"
+    if os.path.exists(zip_path):
+        return FileResponse(zip_path, filename="backend-vps.zip", media_type="application/zip")
+    return {"error": "Build not found"}
+
+@app.get("/api/download-install-script")
+async def download_install_script():
+    path = "/app/deploy/install-vps.sh"
+    if os.path.exists(path):
+        return FileResponse(path, filename="install-vps.sh", media_type="text/plain")
+    return {"error": "Not found"}
 
 # Root endpoint
 @api_router.get("/")
