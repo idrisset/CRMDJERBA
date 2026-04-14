@@ -31,9 +31,12 @@ from reportlab.lib.units import cm
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
-# Use certifi CA bundle for MongoDB Atlas SSL
-import certifi
-client = AsyncIOMotorClient(mongo_url, tlsCAFile=certifi.where())
+# Auto-detect Atlas (SRV) vs local and configure TLS accordingly
+if 'mongodb+srv' in mongo_url or 'mongodb.net' in mongo_url:
+    import certifi
+    client = AsyncIOMotorClient(mongo_url, tlsCAFile=certifi.where())
+else:
+    client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # Resend config
