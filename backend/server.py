@@ -507,29 +507,35 @@ async def register(user: UserRegister):
 
 @api_router.post("/auth/login")
 async def login(credentials: UserLogin):
-    user = await db.users.find_one({"email": credentials.email.lower()})
-    if not user:
-        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-    
-    if not verify_password(credentials.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-    
-    user_id = str(user["_id"])
-    access_token = create_access_token(user_id, user["email"])
-    refresh_token = create_refresh_token(user_id)
-    
-    # Audit login
-    user_dict = {"_id": user_id, "name": user.get("name", ""), "email": user["email"]}
-    await audit_log(user_dict, "LOGIN", "session", user_id, user.get("name", user["email"]))
-    
-    return {
-        "id": user_id,
-        "email": user["email"],
-        "name": user.get("name", ""),
-        "role": user.get("role", "commercial"),
-        "access_token": access_token,
-        "refresh_token": refresh_token
-    }
+    try:
+        user = await db.users.find_one({"email": credentials.email.lower()})
+        if not user:
+            raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+        
+        if not verify_password(credentials.password, user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+        
+        user_id = str(user["_id"])
+        access_token = create_access_token(user_id, user["email"])
+        refresh_token = create_refresh_token(user_id)
+        
+        # Audit login
+        user_dict = {"_id": user_id, "name": user.get("name", ""), "email": user["email"]}
+        await audit_log(user_dict, "LOGIN", "session", user_id, user.get("name", user["email"]))
+        
+        return {
+            "id": user_id,
+            "email": user["email"],
+            "name": user.get("name", ""),
+            "role": user.get("role", "commercial"),
+            "access_token": access_token,
+            "refresh_token": refresh_token
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Login error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {type(e).__name__}: {str(e)}")
 
 @api_router.post("/auth/logout")
 async def logout(request: Request):
