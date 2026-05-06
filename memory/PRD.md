@@ -31,6 +31,15 @@ CRM interne pour DJERBA CONSTRUCTION (Algerie) - gestion clients et appartements
   - Export ZIP téléchargeable
   - **Export hebdomadaire par email (dimanche 03h00)**
   - Toggle on/off + email configurable + bouton test
+- [x] Login page refonte design (mockup fidèle)
+- [x] Système d'alertes sécurité login:
+  - Email inconnu → alerte admin
+  - 5 échecs consécutifs → blocage 15min + alerte admin
+  - Connexion nouvelle IP → alerte utilisateur
+  - Géolocalisation IP via ipapi.co
+  - Collection login_attempts en DB
+  - Templates HTML brandés (navy #172D66 + rouge #EF2A45)
+- [x] Suppression inscription publique (route /register supprimée)
 
 ## Backlog
 - P1: Test WhatsApp Meta end-to-end

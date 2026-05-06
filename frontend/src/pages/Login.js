@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth, formatApiErrorDetail } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Loader2, Lock } from 'lucide-react';
@@ -157,12 +157,9 @@ export function Login() {
             Continuer avec un SSO
           </button>
 
-          {/* Register link */}
-          <p className="text-center text-sm text-gray-500 mt-5">
-            Nouveau ici ?{' '}
-            <Link to="/register" className="font-semibold hover:underline" style={{ color: '#C41E3A' }} data-testid="register-link">
-              Cr&eacute;er un compte
-            </Link>
+          {/* Contact admin note */}
+          <p className="text-center text-xs text-gray-400 mt-5">
+            Acc&egrave;s r&eacute;serv&eacute; au personnel autoris&eacute;.
           </p>
         </div>
 

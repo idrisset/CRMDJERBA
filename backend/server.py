@@ -17,6 +17,7 @@ import asyncio
 import resend
 import json
 import io
+import httpx
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
@@ -42,6 +43,8 @@ db = client[os.environ['DB_NAME']]
 # Resend config
 resend.api_key = os.environ.get("RESEND_API_KEY", "")
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
+ALERTS_SENDER_EMAIL = os.environ.get("ALERTS_SENDER_EMAIL", "alerts@djerbaconstruction.com")
+ADMIN_ALERT_EMAIL = os.environ.get("ADMIN_ALERT_EMAIL", "saighryma@gmail.com")
 
 # JWT Config
 JWT_ALGORITHM = "HS256"
@@ -216,6 +219,190 @@ async def audit_log(user: dict, action: str, entity_type: str, entity_id: str, e
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
     await db.audit_logs.insert_one(doc)
+
+# ============ SECURITY ALERTS SYSTEM ============
+
+LOGO_URL = "https://customer-assets.emergentagent.com/job_property-hub-612/artifacts/wry3uaf5_IMG_1081.jpeg"
+
+async def get_ip_geolocation(ip: str) -> dict:
+    """Get geolocation data from IP using ipapi.co"""
+    try:
+        if ip in ("127.0.0.1", "localhost", "::1", "testclient"):
+            return {"city": "Local", "region": "", "country_name": "Serveur local"}
+        async with httpx.AsyncClient(timeout=5) as client_http:
+            resp = await client_http.get(f"https://ipapi.co/{ip}/json/")
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "city": data.get("city", "Inconnu"),
+                    "region": data.get("region", ""),
+                    "country_name": data.get("country_name", "Inconnu")
+                }
+    except Exception as e:
+        logger.warning(f"Geolocation lookup failed for {ip}: {e}")
+    return {"city": "Inconnu", "region": "", "country_name": "Inconnu"}
+
+def build_email_html(title: str, body_content: str) -> str:
+    """Build branded HTML email template"""
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:40px 20px;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+  <tr><td style="background:#172D66;padding:24px;text-align:center;">
+    <img src="{LOGO_URL}" alt="Djerba Construction" height="60" style="height:60px;"/>
+  </td></tr>
+  <tr><td style="padding:32px 40px;">
+    <h2 style="color:#172D66;margin:0 0 20px;font-size:20px;">{title}</h2>
+    {body_content}
+  </td></tr>
+  <tr><td style="background:#f8f8f8;padding:16px 40px;text-align:center;border-top:1px solid #eee;">
+    <p style="margin:0;font-size:12px;color:#888;">Djerba Construction &mdash; Notification automatique</p>
+    <p style="margin:4px 0 0;font-size:11px;color:#aaa;">Ce message est envoy&eacute; automatiquement. Ne pas r&eacute;pondre.</p>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+async def send_security_alert(to_email: str, subject: str, title: str, body_content: str):
+    """Send a security alert email via Resend"""
+    try:
+        if not resend.api_key:
+            logger.warning("Resend API key not configured, skipping security alert")
+            return
+        html = build_email_html(title, body_content)
+        # Try alerts sender first, fallback to default SENDER_EMAIL
+        sender = ALERTS_SENDER_EMAIL
+        try:
+            params = {
+                "from": sender,
+                "to": [to_email],
+                "subject": subject,
+                "html": html
+            }
+            await asyncio.to_thread(resend.Emails.send, params)
+            logger.info(f"Security alert sent to {to_email}: {subject}")
+        except Exception as send_err:
+            if "not verified" in str(send_err).lower():
+                # Fallback to default sender
+                params = {
+                    "from": SENDER_EMAIL,
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html
+                }
+                await asyncio.to_thread(resend.Emails.send, params)
+                logger.info(f"Security alert sent (fallback sender) to {to_email}: {subject}")
+            else:
+                raise
+    except Exception as e:
+        logger.error(f"Failed to send security alert: {e}")
+
+async def record_login_attempt(email: str, ip: str, user_agent: str, success: bool):
+    """Record a login attempt in the database"""
+    await db.login_attempts.insert_one({
+        "email": email.lower(),
+        "ip": ip,
+        "user_agent": user_agent,
+        "success": success,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+
+async def get_failed_attempts_count(email: str) -> int:
+    """Count consecutive failed attempts for an email (since last success)"""
+    last_success = await db.login_attempts.find_one(
+        {"email": email.lower(), "success": True},
+        sort=[("timestamp", -1)]
+    )
+    query = {"email": email.lower(), "success": False}
+    if last_success:
+        query["timestamp"] = {"$gt": last_success["timestamp"]}
+    return await db.login_attempts.count_documents(query)
+
+async def is_new_ip_for_user(email: str, ip: str) -> bool:
+    """Check if this IP was used by this user in the last 7 days"""
+    seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    existing = await db.login_attempts.find_one({
+        "email": email.lower(),
+        "ip": ip,
+        "success": True,
+        "timestamp": {"$gte": seven_days_ago}
+    })
+    return existing is None
+
+async def alert_unknown_email(email: str, ip: str, user_agent: str, geo: dict):
+    """Alert admin about login attempt with unknown email"""
+    now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M:%S UTC")
+    location = f"{geo['city']}, {geo['country_name']}" if geo['city'] != 'Inconnu' else "Localisation inconnue"
+    body = f"""
+    <table width="100%" cellpadding="8" cellspacing="0" style="border:1px solid #fee2e2;border-radius:8px;background:#fef2f2;">
+      <tr><td style="font-size:14px;color:#333;">
+        <p style="margin:0 0 12px;"><strong style="color:#EF2A45;">Email tent&eacute; :</strong> {email}</p>
+        <p style="margin:0 0 12px;"><strong>Date/Heure :</strong> {now}</p>
+        <p style="margin:0 0 12px;"><strong>Adresse IP :</strong> {ip}</p>
+        <p style="margin:0 0 12px;"><strong>Localisation :</strong> {location}</p>
+        <p style="margin:0;"><strong>Appareil :</strong> {user_agent[:100]}</p>
+      </td></tr>
+    </table>
+    <p style="margin:16px 0 0;font-size:13px;color:#666;">Quelqu'un a tent&eacute; de se connecter avec un email qui n'existe pas dans le syst&egrave;me.</p>
+    """
+    await send_security_alert(
+        ADMIN_ALERT_EMAIL,
+        "\U0001f6a8 Tentative de connexion suspecte - Djerba Construction",
+        "Tentative de connexion suspecte",
+        body
+    )
+
+async def alert_account_locked(email: str, ip: str, user_agent: str, geo: dict, attempts: int):
+    """Alert admin about account being locked"""
+    now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M:%S UTC")
+    location = f"{geo['city']}, {geo['country_name']}" if geo['city'] != 'Inconnu' else "Localisation inconnue"
+    body = f"""
+    <table width="100%" cellpadding="8" cellspacing="0" style="border:1px solid #fef3c7;border-radius:8px;background:#fffbeb;">
+      <tr><td style="font-size:14px;color:#333;">
+        <p style="margin:0 0 12px;"><strong style="color:#EF2A45;">Compte bloqu&eacute; :</strong> {email}</p>
+        <p style="margin:0 0 12px;"><strong>Date/Heure :</strong> {now}</p>
+        <p style="margin:0 0 12px;"><strong>Adresse IP :</strong> {ip}</p>
+        <p style="margin:0 0 12px;"><strong>Localisation :</strong> {location}</p>
+        <p style="margin:0 0 12px;"><strong>Tentatives &eacute;chou&eacute;es :</strong> {attempts}</p>
+        <p style="margin:0;"><strong>Dur&eacute;e blocage :</strong> 15 minutes</p>
+      </td></tr>
+    </table>
+    <p style="margin:16px 0 0;font-size:13px;color:#666;">Le compte a &eacute;t&eacute; automatiquement bloqu&eacute; apr&egrave;s {attempts} tentatives &eacute;chou&eacute;es cons&eacute;cutives.</p>
+    """
+    await send_security_alert(
+        ADMIN_ALERT_EMAIL,
+        "\u26a0\ufe0f Compte bloqu\u00e9 apr\u00e8s 5 \u00e9checs - Djerba Construction",
+        "Compte bloqu\u00e9 temporairement",
+        body
+    )
+
+async def alert_new_ip_login(user_email: str, ip: str, user_agent: str, geo: dict):
+    """Alert user about login from a new IP"""
+    now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M:%S UTC")
+    location = f"{geo['city']}, {geo['country_name']}" if geo['city'] != 'Inconnu' else "Localisation inconnue"
+    body = f"""
+    <table width="100%" cellpadding="8" cellspacing="0" style="border:1px solid #d1fae5;border-radius:8px;background:#ecfdf5;">
+      <tr><td style="font-size:14px;color:#333;">
+        <p style="margin:0 0 12px;"><strong>Date/Heure :</strong> {now}</p>
+        <p style="margin:0 0 12px;"><strong>Adresse IP :</strong> {ip}</p>
+        <p style="margin:0 0 12px;"><strong>Localisation :</strong> {location}</p>
+        <p style="margin:0;"><strong>Appareil :</strong> {user_agent[:100]}</p>
+      </td></tr>
+    </table>
+    <p style="margin:16px 0 0;font-size:13px;color:#666;">Une connexion r&eacute;ussie a &eacute;t&eacute; d&eacute;tect&eacute;e depuis un nouvel appareil ou une nouvelle adresse IP.</p>
+    <p style="margin:8px 0 0;font-size:13px;color:#EF2A45;font-weight:bold;">Si ce n'est pas vous, contactez imm&eacute;diatement l'administrateur.</p>
+    """
+    await send_security_alert(
+        user_email,
+        "\u2705 Nouvelle connexion \u00e0 votre compte",
+        "Nouvelle connexion d\u00e9tect\u00e9e",
+        body
+    )
 
 # Models
 class UserLogin(BaseModel):
@@ -506,23 +693,74 @@ async def register(user: UserRegister):
     }
 
 @api_router.post("/auth/login")
-async def login(credentials: UserLogin):
+async def login(credentials: UserLogin, request: Request):
+    email = credentials.email.lower()
+    ip = request.headers.get("X-Forwarded-For", request.headers.get("X-Real-IP", request.client.host if request.client else "unknown"))
+    if "," in ip:
+        ip = ip.split(",")[0].strip()
+    user_agent = request.headers.get("User-Agent", "Inconnu")
+
     try:
-        user = await db.users.find_one({"email": credentials.email.lower()})
+        user = await db.users.find_one({"email": email})
+
+        # Case A: Unknown email
         if not user:
+            await record_login_attempt(email, ip, user_agent, False)
+            # Send alert in background
+            geo = await get_ip_geolocation(ip)
+            asyncio.create_task(alert_unknown_email(email, ip, user_agent, geo))
             raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-        
+
+        # Check if account is locked
+        locked_until = user.get("locked_until")
+        if locked_until:
+            lock_time = datetime.fromisoformat(locked_until) if isinstance(locked_until, str) else locked_until
+            if datetime.now(timezone.utc) < lock_time:
+                remaining = int((lock_time - datetime.now(timezone.utc)).total_seconds() // 60) + 1
+                raise HTTPException(status_code=423, detail=f"Compte bloqué. Réessayez dans {remaining} minute(s).")
+            else:
+                # Lock expired, clear it
+                await db.users.update_one({"_id": user["_id"]}, {"$unset": {"locked_until": ""}})
+
+        # Check password
         if not verify_password(credentials.password, user["password_hash"]):
+            await record_login_attempt(email, ip, user_agent, False)
+            # Count consecutive failures
+            fail_count = await get_failed_attempts_count(email)
+
+            # Case B: 5 consecutive failures -> lock account
+            if fail_count >= 5:
+                lock_until = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+                await db.users.update_one({"_id": user["_id"]}, {"$set": {"locked_until": lock_until}})
+                geo = await get_ip_geolocation(ip)
+                asyncio.create_task(alert_account_locked(email, ip, user_agent, geo, fail_count))
+                raise HTTPException(status_code=423, detail="Compte bloqué 15 minutes après 5 tentatives échouées.")
+
             raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-        
+
+        # Login successful
+        # Check for new IP BEFORE recording the successful attempt
+        new_ip = await is_new_ip_for_user(email, ip)
+
+        await record_login_attempt(email, ip, user_agent, True)
+
+        # Clear lock if any
+        if user.get("locked_until"):
+            await db.users.update_one({"_id": user["_id"]}, {"$unset": {"locked_until": ""}})
+
         user_id = str(user["_id"])
         access_token = create_access_token(user_id, user["email"])
         refresh_token = create_refresh_token(user_id)
-        
+
         # Audit login
         user_dict = {"_id": user_id, "name": user.get("name", ""), "email": user["email"]}
         await audit_log(user_dict, "LOGIN", "session", user_id, user.get("name", user["email"]))
-        
+
+        # Case C: New IP detection -> alert user
+        if new_ip:
+            geo = await get_ip_geolocation(ip)
+            asyncio.create_task(alert_new_ip_login(user["email"], ip, user_agent, geo))
+
         return {
             "id": user_id,
             "email": user["email"],
@@ -2687,6 +2925,8 @@ async def startup_event():
         return
     
     await db.users.create_index("email", unique=True)
+    await db.login_attempts.create_index([("email", 1), ("timestamp", -1)])
+    await db.login_attempts.create_index([("email", 1), ("ip", 1), ("success", 1), ("timestamp", -1)])
     
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@immo.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")

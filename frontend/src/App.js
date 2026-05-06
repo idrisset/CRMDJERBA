@@ -7,7 +7,6 @@ import { LanguageProvider } from "./contexts/LanguageContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
-import { Register } from "./pages/Register";
 import { Dashboard } from "./pages/Dashboard";
 import { Clients } from "./pages/Clients";
 import { Appartements } from "./pages/Appartements";
@@ -31,7 +30,6 @@ function App() {
             <Routes>
               {/* Public routes */}
               <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
 
               {/* Protected routes */}
               <Route
