@@ -404,6 +404,31 @@ async def alert_new_ip_login(user_email: str, ip: str, user_agent: str, geo: dic
         body
     )
 
+async def alert_ip_banned(ip: str, user_agent: str, geo: dict, attempts: int):
+    """Alert admin about an IP being banned"""
+    now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M:%S UTC")
+    location = f"{geo['city']}, {geo['country_name']}" if geo['city'] != 'Inconnu' else "Localisation inconnue"
+    body = f"""
+    <table width="100%" cellpadding="8" cellspacing="0" style="border:1px solid #fecaca;border-radius:8px;background:#fef2f2;">
+      <tr><td style="font-size:14px;color:#333;">
+        <p style="margin:0 0 12px;"><strong style="color:#EF2A45;">IP BANNIE :</strong> {ip}</p>
+        <p style="margin:0 0 12px;"><strong>Date/Heure :</strong> {now}</p>
+        <p style="margin:0 0 12px;"><strong>Localisation :</strong> {location}</p>
+        <p style="margin:0 0 12px;"><strong>Tentatives &eacute;chou&eacute;es :</strong> {attempts}</p>
+        <p style="margin:0 0 12px;"><strong>Dur&eacute;e du ban :</strong> 1 heure</p>
+        <p style="margin:0;"><strong>Appareil :</strong> {user_agent[:100]}</p>
+      </td></tr>
+    </table>
+    <p style="margin:16px 0 0;font-size:13px;color:#666;">Cette adresse IP a &eacute;t&eacute; automatiquement bloqu&eacute;e apr&egrave;s {attempts} tentatives de connexion &eacute;chou&eacute;es en moins d'une heure.</p>
+    <p style="margin:8px 0 0;font-size:13px;color:#EF2A45;font-weight:bold;">Activit&eacute; suspecte d&eacute;tect&eacute;e. Possible tentative d'intrusion.</p>
+    """
+    await send_security_alert(
+        ADMIN_ALERT_EMAIL,
+        "\U0001f6ab IP bannie - Tentative d'intrusion - Djerba Construction",
+        "Adresse IP bloqu\u00e9e automatiquement",
+        body
+    )
+
 # Models
 class UserLogin(BaseModel):
     email: EmailStr
@@ -664,33 +689,8 @@ async def create_lead_from_whatsapp(phone: str, message: str, ai_response: str):
         return str(existing["_id"])
 
 # ============ AUTH ROUTES ============
-@api_router.post("/auth/register")
-async def register(user: UserRegister):
-    existing = await db.users.find_one({"email": user.email.lower()})
-    if existing:
-        raise HTTPException(status_code=400, detail="Email déjà utilisé")
-    
-    user_doc = {
-        "email": user.email.lower(),
-        "password_hash": hash_password(user.password),
-        "name": user.name,
-        "role": user.role,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    result = await db.users.insert_one(user_doc)
-    user_id = str(result.inserted_id)
-    
-    access_token = create_access_token(user_id, user.email)
-    refresh_token = create_refresh_token(user_id)
-    
-    return {
-        "id": user_id,
-        "email": user.email,
-        "name": user.name,
-        "role": user.role,
-        "access_token": access_token,
-        "refresh_token": refresh_token
-    }
+# NOTE: Public registration has been REMOVED for security.
+# Only super_admin can create users via the Administration panel.
 
 @api_router.post("/auth/login")
 async def login(credentials: UserLogin, request: Request):
@@ -701,12 +701,43 @@ async def login(credentials: UserLogin, request: Request):
     user_agent = request.headers.get("User-Agent", "Inconnu")
 
     try:
+        # CHECK 1: Is this IP banned?
+        ip_ban = await db.banned_ips.find_one({"ip": ip})
+        if ip_ban:
+            ban_until = datetime.fromisoformat(ip_ban["banned_until"]) if isinstance(ip_ban["banned_until"], str) else ip_ban["banned_until"]
+            if datetime.now(timezone.utc) < ban_until:
+                remaining = int((ban_until - datetime.now(timezone.utc)).total_seconds() // 60) + 1
+                raise HTTPException(status_code=403, detail=f"Adresse IP bloquée. Réessayez dans {remaining} minute(s).")
+            else:
+                # Ban expired, remove it
+                await db.banned_ips.delete_one({"ip": ip})
+
+        # CHECK 2: Progressive delay based on recent failures from this IP
+        one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        recent_ip_failures = await db.login_attempts.count_documents({
+            "ip": ip, "success": False, "timestamp": {"$gte": one_hour_ago}
+        })
+        if recent_ip_failures > 0:
+            delay = min(recent_ip_failures * 1.0, 10.0)  # Max 10s delay
+            await asyncio.sleep(delay)
+
+        # CHECK 3: IP-level ban after 10 failures from same IP (any email)
+        if recent_ip_failures >= 10:
+            ban_until = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+            await db.banned_ips.update_one(
+                {"ip": ip},
+                {"$set": {"ip": ip, "banned_until": ban_until, "reason": "10+ failed login attempts", "created_at": datetime.now(timezone.utc).isoformat()}},
+                upsert=True
+            )
+            geo = await get_ip_geolocation(ip)
+            asyncio.create_task(alert_ip_banned(ip, user_agent, geo, recent_ip_failures))
+            raise HTTPException(status_code=403, detail="Trop de tentatives. Adresse IP bloquée pour 1 heure.")
+
         user = await db.users.find_one({"email": email})
 
         # Case A: Unknown email
         if not user:
             await record_login_attempt(email, ip, user_agent, False)
-            # Send alert in background
             geo = await get_ip_geolocation(ip)
             asyncio.create_task(alert_unknown_email(email, ip, user_agent, geo))
             raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
@@ -719,13 +750,11 @@ async def login(credentials: UserLogin, request: Request):
                 remaining = int((lock_time - datetime.now(timezone.utc)).total_seconds() // 60) + 1
                 raise HTTPException(status_code=423, detail=f"Compte bloqué. Réessayez dans {remaining} minute(s).")
             else:
-                # Lock expired, clear it
                 await db.users.update_one({"_id": user["_id"]}, {"$unset": {"locked_until": ""}})
 
         # Check password
         if not verify_password(credentials.password, user["password_hash"]):
             await record_login_attempt(email, ip, user_agent, False)
-            # Count consecutive failures
             fail_count = await get_failed_attempts_count(email)
 
             # Case B: 5 consecutive failures -> lock account
@@ -739,9 +768,7 @@ async def login(credentials: UserLogin, request: Request):
             raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
 
         # Login successful
-        # Check for new IP BEFORE recording the successful attempt
         new_ip = await is_new_ip_for_user(email, ip)
-
         await record_login_attempt(email, ip, user_agent, True)
 
         # Clear lock if any
@@ -2927,6 +2954,9 @@ async def startup_event():
     await db.users.create_index("email", unique=True)
     await db.login_attempts.create_index([("email", 1), ("timestamp", -1)])
     await db.login_attempts.create_index([("email", 1), ("ip", 1), ("success", 1), ("timestamp", -1)])
+    await db.login_attempts.create_index([("ip", 1), ("success", 1), ("timestamp", -1)])
+    await db.banned_ips.create_index("ip", unique=True)
+    await db.banned_ips.create_index("banned_until", expireAfterSeconds=0)
     
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@immo.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
