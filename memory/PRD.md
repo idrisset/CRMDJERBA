@@ -43,4 +43,4 @@ CRM interne pour DJERBA CONSTRUCTION (Algerie) - gestion clients et appartements
 
 ## Backlog
 - P1: Test WhatsApp Meta end-to-end
-- P2: Refactoring server.py en modules
+- P2: ~~Refactoring server.py en modules~~ DONE (2026-05-06)
