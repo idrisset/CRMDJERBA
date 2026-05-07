@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, formatApiErrorDetail } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Loader2, Lock } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -138,24 +138,6 @@ export function Login() {
               )}
             </button>
           </form>
-
-          {/* Divider */}
-          <div className="flex items-center my-5">
-            <div className="flex-1 h-px bg-gray-200"></div>
-            <span className="px-4 text-xs text-gray-400 uppercase tracking-wide">ou</span>
-            <div className="flex-1 h-px bg-gray-200"></div>
-          </div>
-
-          {/* SSO Button */}
-          <button
-            type="button"
-            className="w-full py-3 rounded-full border border-gray-300 text-sm font-semibold text-gray-700 flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors"
-            onClick={() => {}}
-            data-testid="login-sso-button"
-          >
-            <Lock className="h-4 w-4" />
-            Continuer avec un SSO
-          </button>
 
           {/* Contact admin note */}
           <p className="text-center text-xs text-gray-400 mt-5">
