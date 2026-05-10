@@ -122,24 +122,6 @@ export function Dashboard() {
         <p className="text-slate-500 mt-1">{t('overview')}</p>
       </div>
 
-      {/* Seed Button if empty */}
-      {totalApparts === 0 && !loading && (
-        <Card className="border-amber-200 bg-amber-50" data-testid="seed-banner">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-amber-800">Base de données vide</p>
-                <p className="text-sm text-amber-600 mt-1">Cliquez pour charger les 296 lots EDIMCO</p>
-              </div>
-              <Button onClick={handleSeed} disabled={seeding} className="bg-[#C41E3A] hover:bg-[#9A152C]" data-testid="seed-btn">
-                {seeding ? <Loader2 className="h-4 w-4 animate-spin me-2" /> : <Database className="h-4 w-4 me-2" />}
-                {seeding ? 'Chargement...' : 'Initialiser EDIMCO'}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Clickable Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 stagger-fade-in">
         {statCards.map((stat) => (
