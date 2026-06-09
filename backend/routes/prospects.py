@@ -67,20 +67,26 @@ async def delete_prospect(prospect_id: str, current_user: dict = Depends(get_cur
 @router.get("/prospects/analytics")
 async def get_prospects_analytics(current_user: dict = Depends(get_current_user)):
     total = await db.prospects.count_documents(SOFT_DELETE_FILTER)
-    villes_pipeline = [{"$match": {"ville": {"$ne": None, "$ne": ""}, "deleted_at": None}}, {"$group": {"_id": "$ville", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 10}]
-    villes = [{"name": v["_id"], "count": v["count"]} async for v in db.prospects.aggregate(villes_pipeline)]
-    quartiers_pipeline = [{"$match": {"quartier": {"$ne": None, "$ne": ""}}}, {"$group": {"_id": "$quartier", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 10}]
-    quartiers = [{"name": q["_id"], "count": q["count"]} async for q in db.prospects.aggregate(quartiers_pipeline)]
-    types_pipeline = [{"$match": {"type_logement": {"$ne": None, "$ne": ""}}}, {"$group": {"_id": "$type_logement", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}]
-    types = [{"name": t["_id"], "count": t["count"]} async for t in db.prospects.aggregate(types_pipeline)]
-    objectifs_pipeline = [{"$match": {"objectif": {"$ne": None, "$ne": ""}}}, {"$group": {"_id": "$objectif", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}]
-    objectifs = [{"name": o["_id"], "count": o["count"]} async for o in db.prospects.aggregate(objectifs_pipeline)]
-    budget_pipeline = [{"$match": {"budget_max": {"$ne": None, "$gt": 0}}}, {"$group": {"_id": None, "avg_min": {"$avg": "$budget_min"}, "avg_max": {"$avg": "$budget_max"}}}]
+    villes_pipeline = [{"$match": {"deleted_at": None}}, {"$addFields": {"_ville": {"$ifNull": ["$ville", ""]}}}, {"$match": {"_ville": {"$ne": ""}}}, {"$group": {"_id": "$_ville", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 10}]
+    villes = [{"name": v["_id"] or "Non renseigne", "count": v["count"]} async for v in db.prospects.aggregate(villes_pipeline)]
+    quartiers_pipeline = [{"$match": {"deleted_at": None}}, {"$addFields": {"_quartier": {"$ifNull": ["$quartier", ""]}}}, {"$match": {"_quartier": {"$ne": ""}}}, {"$group": {"_id": "$_quartier", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 10}]
+    quartiers = [{"name": q["_id"] or "Non renseigne", "count": q["count"]} async for q in db.prospects.aggregate(quartiers_pipeline)]
+    types_pipeline = [{"$match": {"deleted_at": None}}, {"$addFields": {"_type": {"$ifNull": ["$type_logement", ""]}}}, {"$match": {"_type": {"$ne": ""}}}, {"$group": {"_id": "$_type", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}]
+    types = [{"name": t["_id"] or "Non renseigne", "count": t["count"]} async for t in db.prospects.aggregate(types_pipeline)]
+    objectifs_pipeline = [{"$match": {"deleted_at": None}}, {"$addFields": {"_obj": {"$ifNull": ["$objectif", ""]}}}, {"$match": {"_obj": {"$ne": ""}}}, {"$group": {"_id": "$_obj", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}]
+    objectifs = [{"name": o["_id"] or "Non renseigne", "count": o["count"]} async for o in db.prospects.aggregate(objectifs_pipeline)]
+    budget_pipeline = [{"$match": {"deleted_at": None, "budget_max": {"$ne": None, "$gt": 0}}}, {"$group": {"_id": None, "avg_min": {"$avg": "$budget_min"}, "avg_max": {"$avg": "$budget_max"}}}]
     budget_avg = {"avg_min": 0, "avg_max": 0}
     async for b in db.prospects.aggregate(budget_pipeline):
         budget_avg = {"avg_min": b.get("avg_min", 0) or 0, "avg_max": b.get("avg_max", 0) or 0}
-    paiement_pipeline = [{"$match": {"mode_paiement": {"$ne": None, "$ne": ""}}}, {"$group": {"_id": "$mode_paiement", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}]
-    paiements = [{"name": p["_id"], "count": p["count"]} async for p in db.prospects.aggregate(paiement_pipeline)]
-    zone_pipeline = [{"$match": {"ville": {"$ne": None, "$ne": ""}, "quartier": {"$ne": None, "$ne": ""}}}, {"$group": {"_id": {"ville": "$ville", "quartier": "$quartier"}, "count": {"$sum": 1}}}, {"$sort": {"count": -1}}, {"$limit": 15}]
-    zones = [{"ville": z["_id"]["ville"], "quartier": z["_id"]["quartier"], "count": z["count"]} async for z in db.prospects.aggregate(zone_pipeline)]
+    paiement_pipeline = [{"$match": {"deleted_at": None}}, {"$addFields": {"_pay": {"$ifNull": ["$mode_paiement", ""]}}}, {"$match": {"_pay": {"$ne": ""}}}, {"$group": {"_id": "$_pay", "count": {"$sum": 1}}}, {"$sort": {"count": -1}}]
+    paiements = [{"name": p["_id"] or "Non renseigne", "count": p["count"]} async for p in db.prospects.aggregate(paiement_pipeline)]
+    zone_pipeline = [
+        {"$match": {"deleted_at": None}},
+        {"$addFields": {"_ville": {"$ifNull": ["$ville", ""]}, "_quartier": {"$ifNull": ["$quartier", ""]}}},
+        {"$match": {"_ville": {"$ne": ""}, "_quartier": {"$ne": ""}}},
+        {"$group": {"_id": {"ville": "$_ville", "quartier": "$_quartier"}, "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}, {"$limit": 15}
+    ]
+    zones = [{"ville": z["_id"].get("ville", "Non renseigne"), "quartier": z["_id"].get("quartier", "Non renseigne"), "count": z["count"]} async for z in db.prospects.aggregate(zone_pipeline)]
     return {"total": total, "top_villes": villes, "top_quartiers": quartiers, "top_types": types, "objectifs": objectifs, "budget_avg": budget_avg, "modes_paiement": paiements, "top_zones": zones}
